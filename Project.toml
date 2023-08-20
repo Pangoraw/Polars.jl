@@ -1,0 +1,4 @@
+name = "Polars"
+uuid = "111185ca-2e06-4adb-a8ea-1bf81c70356f"
+authors = ["Paul Berg <paul@plutojl.org>"]
+version = "0.1.0"

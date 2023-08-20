@@ -1,0 +1,11 @@
+[package]
+name = "c-polars"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "polars"
+crate-type = ["cdylib"]
+
+[dependencies]
+polars = { version = "0.32.1", features = ["parquet", "lazy"]}
