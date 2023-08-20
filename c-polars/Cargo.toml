@@ -7,5 +7,7 @@ edition = "2021"
 name = "polars"
 crate-type = ["cdylib"]
 
-[dependencies]
-polars = { version = "0.32.1", features = ["parquet", "lazy"]}
+[dependencies.polars]
+git = "https://github.com/pola-rs/polars"
+rev = "c6a301e3141d40c6c6febdebe0b95632ac8da2ed" # https://github.com/pola-rs/polars/pull/10568
+features = ["parquet", "lazy", "performant"]

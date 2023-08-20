@@ -17,7 +17,7 @@ julia> gb = groupby(customers_nations, [col("nation_key")]);
 
 julia> gbagg = agg(gb,
            alias(col("name"), "customer_names"),
-           col("name_right") |> first |> Strings.titlecase,
+           col("name_right") |> first |> Strings.lowercase,
            mean(col("acctbal"))
        );
 
@@ -32,15 +32,15 @@ shape: (25, 3)
 │ ---            ┆ ---                               ┆ ---         │
 │ str            ┆ list[str]                         ┆ f64         │
 ╞════════════════╪═══════════════════════════════════╪═════════════╡
-│ Japan          ┆ ["Customer#000000025", "Customer… ┆ 4522.271135 │
-│ Egypt          ┆ ["Customer#000000004", "Customer… ┆ 4520.492752 │
-│ United States  ┆ ["Customer#000000117", "Customer… ┆ 4565.65249  │
-│ India          ┆ ["Customer#000000009", "Customer… ┆ 4517.316696 │
+│ japan          ┆ ["Customer#000000025", "Customer… ┆ 4522.271135 │
+│ egypt          ┆ ["Customer#000000004", "Customer… ┆ 4520.492752 │
+│ united states  ┆ ["Customer#000000117", "Customer… ┆ 4565.65249  │
+│ india          ┆ ["Customer#000000009", "Customer… ┆ 4517.316696 │
 │ …              ┆ …                                 ┆ …           │
-│ Iraq           ┆ ["Customer#000000052", "Customer… ┆ 4514.438471 │
-│ United Kingdom ┆ ["Customer#000000011", "Customer… ┆ 4514.656468 │
-│ Canada         ┆ ["Customer#000000005", "Customer… ┆ 4489.259827 │
-│ Romania        ┆ ["Customer#000000043", "Customer… ┆ 4544.85113  │
+│ iraq           ┆ ["Customer#000000052", "Customer… ┆ 4514.438471 │
+│ united kingdom ┆ ["Customer#000000011", "Customer… ┆ 4514.656468 │
+│ canada         ┆ ["Customer#000000005", "Customer… ┆ 4489.259827 │
+│ romania        ┆ ["Customer#000000043", "Customer… ┆ 4544.85113  │
 └────────────────┴───────────────────────────────────┴─────────────┘
 ```
 
