@@ -345,9 +345,9 @@ pub unsafe fn polars_lazy_frame_fetch(
 }
 
 #[no_mangle]
-pub unsafe fn polars_lazy_group_by_destroy(err: *const polars_error_t) {
-    assert!(!err.is_null());
-    let _ = Box::from_raw(err.cast_mut());
+pub unsafe fn polars_lazy_group_by_destroy(gb: *const polars_lazy_group_by_t) {
+    assert!(!gb.is_null());
+    let _ = Box::from_raw(gb.cast_mut());
 }
 
 #[no_mangle]

@@ -154,7 +154,7 @@ mutable struct LazyGroupBy
 
     LazyGroupBy(ptr) =
         finalizer(new(ptr)) do gb
-            @ccall libpolars.polars_lazy_group_by_destroy(gb::Ptr{polars_lazy_frame_t})::Cvoid
+            @ccall libpolars.polars_lazy_group_by_destroy(gb::Ptr{polars_lazy_group_by_t})::Cvoid
         end
 end
 
