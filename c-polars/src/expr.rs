@@ -6,66 +6,62 @@ use polars::{
 use crate::*;
 
 #[no_mangle]
-pub unsafe fn polars_expr_destroy(expr: *const polars_expr_t) {
+pub unsafe extern "C" fn polars_expr_destroy(expr: *const polars_expr_t) {
     assert!(!expr.is_null());
     let _ = Box::from_raw(expr.cast_mut());
 }
 
 #[no_mangle]
-pub unsafe fn polars_expr_literal_bool(value: bool) -> *const polars_expr_t {
+pub unsafe extern "C" fn polars_expr_literal_bool(value: bool) -> *const polars_expr_t {
     Box::into_raw(Box::new(polars_expr_t {
         inner: Expr::Literal(LiteralValue::Boolean(value)),
     }))
 }
 
 #[no_mangle]
-pub unsafe fn polars_expr_literal_null() -> *const polars_expr_t {
+pub unsafe extern "C" fn polars_expr_literal_null() -> *const polars_expr_t {
     Box::into_raw(Box::new(polars_expr_t {
         inner: Expr::Literal(LiteralValue::Null),
     }))
 }
 
 #[no_mangle]
-pub unsafe fn polars_expr_literal_i32(value: i32) -> *const polars_expr_t {
+pub unsafe extern "C" fn polars_expr_literal_i32(value: i32) -> *const polars_expr_t {
     Box::into_raw(Box::new(polars_expr_t {
         inner: Expr::Literal(LiteralValue::Int32(value)),
     }))
 }
 
 #[no_mangle]
-pub unsafe fn polars_expr_literal_i64(value: i64) -> *const polars_expr_t {
+pub unsafe extern "C" fn polars_expr_literal_i64(value: i64) -> *const polars_expr_t {
     Box::into_raw(Box::new(polars_expr_t {
         inner: Expr::Literal(LiteralValue::Int64(value)),
     }))
 }
 
 #[no_mangle]
-pub unsafe fn polars_expr_literal_u32(value: u32) -> *const polars_expr_t {
+pub unsafe extern "C" fn polars_expr_literal_u32(value: u32) -> *const polars_expr_t {
     Box::into_raw(Box::new(polars_expr_t {
         inner: Expr::Literal(LiteralValue::UInt32(value)),
     }))
 }
 
 #[no_mangle]
-pub unsafe fn polars_expr_literal_u64(value: u64) -> *const polars_expr_t {
+pub unsafe extern "C" fn polars_expr_literal_u64(value: u64) -> *const polars_expr_t {
     Box::into_raw(Box::new(polars_expr_t {
         inner: Expr::Literal(LiteralValue::UInt64(value)),
     }))
 }
 
 #[no_mangle]
-pub unsafe fn polars_expr_literal_utf8(
+pub unsafe extern "C" fn polars_expr_literal_utf8(
     s: *const u8,
     len: usize,
     out: *mut *const polars_expr_t,
 ) -> *const polars_error_t {
     let value = match std::str::from_utf8(std::slice::from_raw_parts(s, len)) {
         Ok(value) => value,
-        Err(err) => {
-            return Box::into_raw(Box::new(polars_error_t {
-                msg: err.to_string(),
-            }))
-        }
+        Err(err) => return make_error(err),
     };
     *out = Box::into_raw(Box::new(polars_expr_t {
         inner: Expr::Literal(LiteralValue::Utf8(value.to_owned())),
@@ -74,18 +70,14 @@ pub unsafe fn polars_expr_literal_utf8(
 }
 
 #[no_mangle]
-pub unsafe fn polars_expr_col(
+pub unsafe extern "C" fn polars_expr_col(
     name: *const u8,
     len: usize,
     out: *mut *const polars_expr_t,
 ) -> *const polars_error_t {
     let name = match std::str::from_utf8(std::slice::from_raw_parts(name, len)) {
         Ok(value) => value,
-        Err(err) => {
-            return Box::into_raw(Box::new(polars_error_t {
-                msg: err.to_string(),
-            }))
-        }
+        Err(err) => return make_error(err),
     };
     let expr = col(&name);
     *out = Box::into_raw(Box::new(polars_expr_t { inner: expr }));
@@ -93,7 +85,7 @@ pub unsafe fn polars_expr_col(
 }
 
 #[no_mangle]
-pub unsafe fn polars_expr_alias(
+pub unsafe extern "C" fn polars_expr_alias(
     expr: *const polars_expr_t,
     name: *const u8,
     len: usize,
@@ -101,11 +93,7 @@ pub unsafe fn polars_expr_alias(
 ) -> *const polars_error_t {
     let name = match std::str::from_utf8(std::slice::from_raw_parts(name, len)) {
         Ok(value) => value,
-        Err(err) => {
-            return Box::into_raw(Box::new(polars_error_t {
-                msg: err.to_string(),
-            }))
-        }
+        Err(err) => return make_error(err),
     };
     let aliased = (*expr).inner.clone().alias(name);
     *out = Box::into_raw(Box::new(polars_expr_t { inner: aliased }));
@@ -115,7 +103,7 @@ pub unsafe fn polars_expr_alias(
 macro_rules! gen_impl_expr {
     ($n: ident, $t: expr) => {
         #[no_mangle]
-        pub unsafe fn $n(expr: *const polars_expr_t) -> *const polars_expr_t {
+        pub unsafe extern "C" fn $n(expr: *const polars_expr_t) -> *const polars_expr_t {
             let expr = &(*expr).inner;
             let out_expr = $t(expr.clone());
             Box::into_raw(Box::new(polars_expr_t { inner: out_expr }))
@@ -168,7 +156,10 @@ gen_impl_expr!(polars_expr_reverse, Expr::reverse);
 macro_rules! gen_impl_expr_binary {
     ($n: ident, $t: expr) => {
         #[no_mangle]
-        pub unsafe fn $n(a: *const polars_expr_t, b: *const polars_expr_t) -> *const polars_expr_t {
+        pub unsafe extern "C" fn $n(
+            a: *const polars_expr_t,
+            b: *const polars_expr_t,
+        ) -> *const polars_expr_t {
             let a = &(*a).inner;
             let b = &(*b).inner;
             let out_expr = $t(a.clone(), b.clone());
@@ -193,7 +184,7 @@ gen_impl_expr_binary!(polars_expr_div, core::ops::Div::div);
 macro_rules! gen_impl_expr_list {
     ($n: ident, $t: expr) => {
         #[no_mangle]
-        pub unsafe fn $n(a: *const polars_expr_t) -> *const polars_expr_t {
+        pub unsafe extern "C" fn $n(a: *const polars_expr_t) -> *const polars_expr_t {
             let expr = $t((*a).inner.clone().list());
             Box::into_raw(Box::new(polars_expr_t { inner: expr }))
         }
@@ -216,7 +207,10 @@ gen_impl_expr_list!(polars_expr_list_last, ListNameSpace::last);
 macro_rules! gen_impl_expr_binary_list {
     ($n: ident, $t: expr) => {
         #[no_mangle]
-        pub unsafe fn $n(a: *const polars_expr_t, b: *const polars_expr_t) -> *const polars_expr_t {
+        pub unsafe extern "C" fn $n(
+            a: *const polars_expr_t,
+            b: *const polars_expr_t,
+        ) -> *const polars_expr_t {
             let expr = $t((*a).inner.clone().list(), ((*b).inner.clone()));
             Box::into_raw(Box::new(polars_expr_t { inner: expr }))
         }
@@ -230,7 +224,7 @@ gen_impl_expr_binary_list!(polars_expr_list_contains, ListNameSpace::contains);
 macro_rules! gen_impl_expr_str {
     ($n: ident, $t: expr) => {
         #[no_mangle]
-        pub unsafe fn $n(a: *const polars_expr_t) -> *const polars_expr_t {
+        pub unsafe extern "C" fn $n(a: *const polars_expr_t) -> *const polars_expr_t {
             let expr = $t((*a).inner.clone().str());
             Box::into_raw(Box::new(polars_expr_t { inner: expr }))
         }
@@ -248,7 +242,10 @@ gen_impl_expr_str!(polars_expr_str_explode, StringNameSpace::explode);
 macro_rules! gen_impl_expr_binary_str {
     ($n: ident, $t: expr) => {
         #[no_mangle]
-        pub unsafe fn $n(a: *const polars_expr_t, b: *const polars_expr_t) -> *const polars_expr_t {
+        pub unsafe extern "C" fn $n(
+            a: *const polars_expr_t,
+            b: *const polars_expr_t,
+        ) -> *const polars_expr_t {
             let expr = $t((*a).inner.clone().str(), ((*b).inner.clone()));
             Box::into_raw(Box::new(polars_expr_t { inner: expr }))
         }

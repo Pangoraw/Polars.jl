@@ -12,8 +12,17 @@ pub struct polars_error_t {
     msg: String,
 }
 
+fn make_error<E: ToString>(err: E) -> *const polars_error_t {
+    Box::into_raw(Box::new(polars_error_t {
+        msg: err.to_string(),
+    }))
+}
+
 #[no_mangle]
-pub unsafe fn polars_error_message(err: *const polars_error_t, data: *mut *const u8) -> usize {
+pub unsafe extern "C" fn polars_error_message(
+    err: *const polars_error_t,
+    data: *mut *const u8,
+) -> usize {
     assert!(!err.is_null());
     assert!(!data.is_null());
     *data = (*err).msg.as_ptr();
@@ -21,7 +30,7 @@ pub unsafe fn polars_error_message(err: *const polars_error_t, data: *mut *const
 }
 
 #[no_mangle]
-pub unsafe fn polars_error_destroy(err: *const polars_error_t) {
+pub unsafe extern "C" fn polars_error_destroy(err: *const polars_error_t) {
     assert!(!err.is_null());
     let _ = Box::from_raw(err.cast_mut());
 }
@@ -32,22 +41,20 @@ pub struct polars_value_t<'a> {
 }
 
 #[no_mangle]
-pub unsafe fn polars_value_destroy(value: *mut polars_value_t) {
+pub unsafe extern "C" fn polars_value_destroy(value: *mut polars_value_t) {
     assert!(!value.is_null());
     let _ = Box::from_raw(value);
 }
 
 #[no_mangle]
-pub unsafe fn polars_value_get_u32(
+pub unsafe extern "C" fn polars_value_get_u32(
     value: *mut polars_value_t,
     out: *mut u32,
 ) -> *const polars_error_t {
     match (*value).inner {
         AnyValue::UInt32(value) => *out = value,
         _ => {
-            return Box::into_raw(Box::new(polars_error_t {
-                msg: String::from("value is not of type u32"),
-            }))
+            return make_error("value is not of type u32");
         }
     }
     std::ptr::null()
@@ -73,8 +80,12 @@ pub struct polars_expr_t {
     inner: Expr,
 }
 
+fn make_dataframe(df: DataFrame) -> *mut polars_dataframe_t {
+    Box::into_raw(Box::new(polars_dataframe_t { inner: df }))
+}
+
 #[no_mangle]
-pub unsafe fn polars_series_new(
+pub unsafe extern "C" fn polars_series_new(
     name: *const u8,
     namelen: usize,
     values: *const u32,
@@ -84,9 +95,7 @@ pub unsafe fn polars_series_new(
     let name = match std::str::from_utf8(std::slice::from_raw_parts(name, namelen)) {
         Ok(name) => name,
         Err(err) => {
-            return Box::into_raw(Box::new(polars_error_t {
-                msg: err.to_string(),
-            }))
+            return make_error(err);
         }
     };
     let series = Series::new(name, std::slice::from_raw_parts(values, valueslen));
@@ -95,19 +104,22 @@ pub unsafe fn polars_series_new(
 }
 
 #[no_mangle]
-unsafe fn polars_series_destroy(series: *mut polars_series_t) {
+pub unsafe extern "C" fn polars_series_destroy(series: *mut polars_series_t) {
     assert!(!series.is_null());
     let _ = Box::from_raw(series);
 }
 
 #[no_mangle]
-pub unsafe fn polars_series_length(series: *mut polars_series_t) -> usize {
+pub unsafe extern "C" fn polars_series_length(series: *mut polars_series_t) -> usize {
     assert!(!series.is_null());
     (*series).inner.len()
 }
 
 #[no_mangle]
-pub unsafe fn polars_series_name(series: *mut polars_series_t, out: *mut *const u8) -> usize {
+pub unsafe extern "C" fn polars_series_name(
+    series: *mut polars_series_t,
+    out: *mut *const u8,
+) -> usize {
     assert!(!series.is_null());
     let name = (*series).inner.name();
     *out = name.as_ptr();
@@ -115,7 +127,7 @@ pub unsafe fn polars_series_name(series: *mut polars_series_t, out: *mut *const 
 }
 
 #[no_mangle]
-pub unsafe fn polars_series_get<'a>(
+pub unsafe extern "C" fn polars_series_get<'a>(
     series: *mut polars_series_t,
     index: usize,
 ) -> *const polars_value_t<'a> {
@@ -125,7 +137,7 @@ pub unsafe fn polars_series_get<'a>(
 }
 
 #[no_mangle]
-pub unsafe fn polars_series_get_u32(
+pub unsafe extern "C" fn polars_series_get_u32(
     series: *mut polars_series_t,
     index: usize,
     out: *mut u32,
@@ -136,30 +148,23 @@ pub unsafe fn polars_series_get_u32(
             *out = value;
             std::ptr::null()
         }
-        Ok(_) => Box::into_raw(Box::new(polars_error_t {
-            msg: String::from("series type is invalid"),
-        })),
-        Err(err) => Box::into_raw(Box::new(polars_error_t {
-            msg: err.to_string(),
-        })),
+        Ok(_) => make_error("series type is invalid"),
+        Err(err) => make_error(err),
     }
 }
 
 #[no_mangle]
 pub fn polars_dataframe_new() -> *mut polars_dataframe_t {
-    let df = Box::new(polars_dataframe_t {
-        inner: DataFrame::empty(),
-    });
-    Box::into_raw(df)
+    make_dataframe(DataFrame::empty())
 }
 
 #[no_mangle]
-pub unsafe fn polars_dataframe_destroy(df: *mut polars_dataframe_t) {
+pub unsafe extern "C" fn polars_dataframe_destroy(df: *mut polars_dataframe_t) {
     let _ = Box::from_raw(df);
 }
 
 #[no_mangle]
-pub fn polars_dataframe_read_parquet(
+pub extern "C" fn polars_dataframe_read_parquet(
     path: *const u8,
     pathlen: usize,
     out: *mut *mut polars_dataframe_t,
@@ -167,38 +172,26 @@ pub fn polars_dataframe_read_parquet(
     let path = unsafe { std::slice::from_raw_parts(path, pathlen) };
     let path = match std::str::from_utf8(path) {
         Ok(path) => path,
-        Err(err) => {
-            return Box::into_raw(Box::new(polars_error_t {
-                msg: err.to_string(),
-            }))
-        }
+        Err(err) => return make_error(err),
     };
 
     let file = match std::fs::OpenOptions::new().read(true).open(path) {
         Ok(file) => file,
-        Err(err) => {
-            return Box::into_raw(Box::new(polars_error_t {
-                msg: err.to_string(),
-            }));
-        }
+        Err(err) => return make_error(err),
     };
 
     match ParquetReader::new(file).finish() {
         Ok(df) => unsafe {
-            *out = Box::into_raw(Box::new(polars_dataframe_t { inner: df }));
+            *out = make_dataframe(df);
         },
-        Err(err) => {
-            return Box::into_raw(Box::new(polars_error_t {
-                msg: err.to_string(),
-            }));
-        }
+        Err(err) => return make_error(err),
     }
 
     std::ptr::null()
 }
 
 #[no_mangle]
-pub unsafe fn polars_dataframe_show(
+pub unsafe extern "C" fn polars_dataframe_show(
     df: *mut polars_dataframe_t,
     user: *const c_void,
     callback: IOCallback,
@@ -210,7 +203,9 @@ pub unsafe fn polars_dataframe_show(
 }
 
 #[no_mangle]
-pub unsafe fn polars_dataframe_lazy(df: *mut polars_dataframe_t) -> *mut polars_lazy_frame_t {
+pub unsafe extern "C" fn polars_dataframe_lazy(
+    df: *mut polars_dataframe_t,
+) -> *mut polars_lazy_frame_t {
     let df = &(*df).inner;
     Box::into_raw(Box::new(polars_lazy_frame_t {
         inner: df.clone().lazy(),
@@ -218,13 +213,15 @@ pub unsafe fn polars_dataframe_lazy(df: *mut polars_dataframe_t) -> *mut polars_
 }
 
 #[no_mangle]
-pub unsafe fn polars_lazy_frame_destroy(df: *mut polars_lazy_frame_t) {
+pub unsafe extern "C" fn polars_lazy_frame_destroy(df: *mut polars_lazy_frame_t) {
     assert!(!df.is_null());
     let _ = Box::from_raw(df);
 }
 
 #[no_mangle]
-pub unsafe fn polars_lazy_frame_clone(df: *mut polars_lazy_frame_t) -> *mut polars_lazy_frame_t {
+pub unsafe extern "C" fn polars_lazy_frame_clone(
+    df: *mut polars_lazy_frame_t,
+) -> *mut polars_lazy_frame_t {
     assert!(!df.is_null());
     Box::into_raw(Box::new(polars_lazy_frame_t {
         inner: (*df).inner.clone(),
@@ -232,7 +229,7 @@ pub unsafe fn polars_lazy_frame_clone(df: *mut polars_lazy_frame_t) -> *mut pola
 }
 
 #[no_mangle]
-pub unsafe fn polars_lazy_frame_select(
+pub unsafe extern "C" fn polars_lazy_frame_select(
     df: *mut polars_lazy_frame_t,
     exprs: *const *const polars_expr_t,
     nexprs: usize,
@@ -249,7 +246,10 @@ pub unsafe fn polars_lazy_frame_select(
 }
 
 #[no_mangle]
-pub unsafe fn polars_lazy_frame_filter(df: *mut polars_lazy_frame_t, expr: *const polars_expr_t) {
+pub unsafe extern "C" fn polars_lazy_frame_filter(
+    df: *mut polars_lazy_frame_t,
+    expr: *const polars_expr_t,
+) {
     assert!(!df.is_null());
     assert!(!expr.is_null());
     let mut df = Box::from_raw(df);
@@ -259,26 +259,20 @@ pub unsafe fn polars_lazy_frame_filter(df: *mut polars_lazy_frame_t, expr: *cons
 }
 
 #[no_mangle]
-pub unsafe fn polars_lazy_frame_collect(
+pub unsafe extern "C" fn polars_lazy_frame_collect(
     df: *mut polars_lazy_frame_t,
     out: *mut *mut polars_dataframe_t,
 ) -> *const polars_error_t {
     let df = (*df).inner.clone();
-    *out = Box::into_raw(Box::new(polars_dataframe_t {
-        inner: match df.collect() {
-            Ok(value) => value,
-            Err(err) => {
-                return Box::into_raw(Box::new(polars_error_t {
-                    msg: err.to_string(),
-                }))
-            }
-        },
-    }));
+    *out = make_dataframe(match df.collect() {
+        Ok(value) => value,
+        Err(err) => return make_error(err),
+    });
     std::ptr::null()
 }
 
 #[no_mangle]
-pub unsafe fn polars_lazy_frame_group_by(
+pub unsafe extern "C" fn polars_lazy_frame_group_by(
     df: *mut polars_lazy_frame_t,
     exprs: *const *const polars_expr_t,
     nexprs: usize,
@@ -294,7 +288,7 @@ pub unsafe fn polars_lazy_frame_group_by(
 }
 
 #[no_mangle]
-pub unsafe fn polars_lazy_frame_join_inner(
+pub unsafe extern "C" fn polars_lazy_frame_join_inner(
     a: *mut polars_lazy_frame_t,
     b: *mut polars_lazy_frame_t,
     exprs_a: *const *const polars_expr_t,
@@ -325,33 +319,27 @@ pub unsafe fn polars_lazy_frame_join_inner(
 }
 
 #[no_mangle]
-pub unsafe fn polars_lazy_frame_fetch(
+pub unsafe extern "C" fn polars_lazy_frame_fetch(
     df: *mut polars_lazy_frame_t,
     n: u32,
     out: *mut *mut polars_dataframe_t,
 ) -> *const polars_error_t {
     let df = (*df).inner.clone();
-    *out = Box::into_raw(Box::new(polars_dataframe_t {
-        inner: match df.fetch(n as usize) {
-            Ok(value) => value,
-            Err(err) => {
-                return Box::into_raw(Box::new(polars_error_t {
-                    msg: err.to_string(),
-                }))
-            }
-        },
-    }));
+    *out = make_dataframe(match df.fetch(n as usize) {
+        Ok(value) => value,
+        Err(err) => return make_error(err),
+    });
     std::ptr::null()
 }
 
 #[no_mangle]
-pub unsafe fn polars_lazy_group_by_destroy(gb: *const polars_lazy_group_by_t) {
+pub unsafe extern "C" fn polars_lazy_group_by_destroy(gb: *const polars_lazy_group_by_t) {
     assert!(!gb.is_null());
     let _ = Box::from_raw(gb.cast_mut());
 }
 
 #[no_mangle]
-pub unsafe fn polars_lazy_group_by_agg(
+pub unsafe extern "C" fn polars_lazy_group_by_agg(
     gb: *mut polars_lazy_group_by_t,
     exprs: *const *const polars_expr_t,
     nexprs: usize,

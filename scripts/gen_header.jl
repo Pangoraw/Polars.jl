@@ -83,7 +83,7 @@ function rec_gen(io::IO, expr)
 end
 
 function main()
-    open("c-polars/include/polars2.h", "w") do io
+    open("c-polars/include/polars.h", "w") do io
         println(io, """
         #ifndef POLARS_H
         #define POLARS_H
@@ -96,6 +96,9 @@ function main()
                 rec_gen(io, expr)
             end
         end
+        println(io)
         print(io, "#endif // POLARS_H")
     end
 end
+
+main()

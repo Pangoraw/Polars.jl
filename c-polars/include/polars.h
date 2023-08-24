@@ -11,6 +11,8 @@ typedef struct polars_dataframe_t polars_dataframe_t;
 
 typedef struct polars_lazy_frame_t polars_lazy_frame_t;
 
+typedef struct polars_lazy_group_by_t polars_lazy_group_by_t;
+
 typedef struct polars_expr_t polars_expr_t;
 
 unsigned polars_error_message(polars_error_t *err, char **str);
@@ -40,6 +42,20 @@ polars_error_t *polars_lazy_frame_fetch(polars_lazy_frame_t *df, unsigned n,
 void polars_lazy_frame_filter(polars_lazy_frame_t *df, polars_expr_t *expr);
 
 polars_lazy_frame_t *polars_lazy_frame_clone(polars_lazy_frame_t *df);
+
+polars_lazy_frame_t *polars_lazy_frame_join_inner(
+    polars_lazy_frame_t *a, polars_lazy_frame_t *b, polars_expr_t **exprs_a_ptr,
+    size_t exprs_a_ptrlen, polars_expr_t **exprs_b_ptr, size_t exprs_b_ptrlen);
+
+void polars_lazy_group_by_destroy(polars_lazy_group_by_t *gb);
+
+polars_lazy_group_by_t *polars_lazy_frame_group_by(polars_lazy_frame_t *df,
+                                                   polars_expr_t **exprs_ptrs,
+                                                   int exprs_ptrslen);
+
+polars_lazy_frame_t *polars_lazy_group_by_agg(polars_lazy_group_by_t *gb,
+                                              polars_expr_t **exprs_ptrs,
+                                              int exprs_ptrslen);
 
 void polars_expr_destroy(polars_expr_t *expr);
 
