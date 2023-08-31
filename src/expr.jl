@@ -1,8 +1,7 @@
 mutable struct Expr
     ptr::Ptr{polars_expr_t}
 
-    Expr(ptr) =
-        finalizer(expr -> @ccall(libpolars.polars_expr_destroy(expr::Ptr{polars_expr_t})::Cvoid), new(ptr))
+    Expr(ptr) = finalizer(polars_expr_destroy, new(ptr))
 end
 
 Base.unsafe_convert(::Type{Ptr{polars_expr_t}}, expr::Expr) = expr.ptr
@@ -20,36 +19,32 @@ Base.convert(::Type{Expr}, p::Pair{Expr,Pair{T,Symbol}}) where {T} = alias(p[2][
 
 Base.convert(::Type{Expr}, ::Colon) = col("*")
 function Base.convert(::Type{Expr}, v::Int32)
-    out = @ccall libpolars.polars_expr_literal_i32(v::Int32)::Ptr{polars_expr_t}
+    out = polars_expr_literal_i32(v)
     Expr(out)
 end
 function Base.convert(::Type{Expr}, v::Int64)
-    out = @ccall libpolars.polars_expr_literal_i64(v::Int64)::Ptr{polars_expr_t}
+    out = polars_expr_literal_i64(v)
     Expr(out)
 end
 function Base.convert(::Type{Expr}, v::UInt32)
-    out = @ccall libpolars.polars_expr_literal_u32(v::UInt32)::Ptr{polars_expr_t}
+    out = polars_expr_literal_u32(v)
     Expr(out)
 end
 function Base.convert(::Type{Expr}, v::UInt64)
-    out = @ccall libpolars.polars_expr_literal_u64(v::UInt64)::Ptr{polars_expr_t}
+    out = polars_expr_literal_u64(v)
     Expr(out)
 end
 function Base.convert(::Type{Expr}, v::Bool)
-    out = @ccall libpolars.polars_expr_literal_bool(v::Bool)::Ptr{polars_expr_t}
+    out = polars_expr_literal_bool(v)
     Expr(out)
 end
 function Base.convert(::Type{Expr}, ::Nothing)
-    out = @ccall libpolars.polars_expr_literal_null()::Ptr{polars_expr_t}
+    out = polars_expr_literal_null()
     Expr(out)
 end
 function Base.convert(::Type{Expr}, s::String)
     out = Ref{Ptr{polars_expr_t}}()
-    err = @ccall libpolars.polars_expr_literal_utf8(
-        s::Ptr{Cchar},
-        length(s)::Csize_t,
-        out::Ptr{Ptr{polars_expr_t}},
-    )::Ptr{polars_error_t}
+    err = polars_expr_literal_utf8(s, length(s), out)
     polars_error(err)
     Expr(out[])
 end
@@ -70,22 +65,14 @@ Base.isless(a::Expr, b) = Base.lt(promote(a, b)...)
 
 function col(name)
     expr = Ref{Ptr{polars_expr_t}}()
-    err = @ccall libpolars.polars_expr_col(
-        name::Ptr{Cchar}, length(name)::Cuint,
-        expr::Ptr{Ptr{polars_expr_t}},
-    )::Ptr{polars_error_t}
+    err = polars_expr_col(name, length(name), expr)
     polars_error(err)
     return Expr(expr[])
 end
 
 function alias(expr, alias)
     out = Ref{Ptr{polars_expr_t}}()
-    err = @ccall libpolars.polars_expr_alias(
-        expr::Ptr{polars_expr_t},
-        alias::Ptr{Cchar},
-        length(alias)::Csize_t,
-        out::Ptr{Ptr{polars_expr_t}},
-    )::Ptr{polars_error_t}
+    err = polars_expr_alias(expr, alias, length(alias), out)
     polars_error(err)
     return Expr(out[])
 end
@@ -106,13 +93,13 @@ macro generate_expr_fns(ex)
         if occursin("binary", gen_name)
             push!(sig.args, Base.Expr(:(::), :a, :Expr), Base.Expr(:(::), :b, :Expr))
             body = quote
-                out = @ccall libpolars.$(cname)(a::Ptr{polars_expr_t}, b::Ptr{polars_expr_t})::Ptr{polars_expr_t}
+                out = API.$(cname)(a, b)
                 Expr(out)
             end
         else
             push!(sig.args, Base.Expr(:(::), :expr, :Expr))
             body = quote
-                out = @ccall libpolars.$(cname)(expr::Ptr{polars_expr_t})::Ptr{polars_expr_t}
+                out = API.$(cname)(expr)
                 Expr(out)
             end
         end
@@ -184,7 +171,7 @@ end
 end
 
 module Lists
-    using ..Polars: @generate_expr_fns, polars_expr_t, libpolars, Expr
+    using ..Polars: @generate_expr_fns, API, polars_expr_t, Expr
 
     @generate_expr_fns begin
         gen_impl_expr_list!(polars_expr_list_lengths, ListNameSpace::lengths);
@@ -207,7 +194,7 @@ module Lists
 end
 
 module Strings
-    using ..Polars: @generate_expr_fns, polars_expr_t, libpolars, Expr
+    using ..Polars: @generate_expr_fns, API, polars_expr_t, Expr
 
     @generate_expr_fns begin
         gen_impl_expr_str!(polars_expr_str_to_uppercase, StringNameSpace::uppercase);

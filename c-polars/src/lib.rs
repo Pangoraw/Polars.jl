@@ -5,6 +5,8 @@ use std::ffi::c_void;
 use polars::prelude::*;
 
 mod expr;
+mod series;
+mod value;
 
 type IOCallback = unsafe extern "cdecl" fn(user: *const c_void, data: *const u8, len: usize);
 
@@ -40,26 +42,6 @@ pub struct polars_value_t<'a> {
     inner: AnyValue<'a>,
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn polars_value_destroy(value: *mut polars_value_t) {
-    assert!(!value.is_null());
-    let _ = Box::from_raw(value);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn polars_value_get_u32(
-    value: *mut polars_value_t,
-    out: *mut u32,
-) -> *const polars_error_t {
-    match (*value).inner {
-        AnyValue::UInt32(value) => *out = value,
-        _ => {
-            return make_error("value is not of type u32");
-        }
-    }
-    std::ptr::null()
-}
-
 pub struct polars_dataframe_t {
     inner: DataFrame,
 }
@@ -82,75 +64,6 @@ pub struct polars_expr_t {
 
 fn make_dataframe(df: DataFrame) -> *mut polars_dataframe_t {
     Box::into_raw(Box::new(polars_dataframe_t { inner: df }))
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn polars_series_new(
-    name: *const u8,
-    namelen: usize,
-    values: *const u32,
-    valueslen: usize,
-    out: *mut *mut polars_series_t,
-) -> *const polars_error_t {
-    let name = match std::str::from_utf8(std::slice::from_raw_parts(name, namelen)) {
-        Ok(name) => name,
-        Err(err) => {
-            return make_error(err);
-        }
-    };
-    let series = Series::new(name, std::slice::from_raw_parts(values, valueslen));
-    *out = Box::into_raw(Box::new(polars_series_t { inner: series }));
-    std::ptr::null()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn polars_series_destroy(series: *mut polars_series_t) {
-    assert!(!series.is_null());
-    let _ = Box::from_raw(series);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn polars_series_length(series: *mut polars_series_t) -> usize {
-    assert!(!series.is_null());
-    (*series).inner.len()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn polars_series_name(
-    series: *mut polars_series_t,
-    out: *mut *const u8,
-) -> usize {
-    assert!(!series.is_null());
-    let name = (*series).inner.name();
-    *out = name.as_ptr();
-    name.len()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn polars_series_get<'a>(
-    series: *mut polars_series_t,
-    index: usize,
-) -> *const polars_value_t<'a> {
-    assert!(!series.is_null());
-    let value = (*series).inner.get(index).unwrap();
-    Box::into_raw(Box::new(polars_value_t { inner: value }))
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn polars_series_get_u32(
-    series: *mut polars_series_t,
-    index: usize,
-    out: *mut u32,
-) -> *const polars_error_t {
-    assert!(!series.is_null());
-    match (*series).inner.get(index) {
-        Ok(AnyValue::UInt32(value)) => {
-            *out = value;
-            std::ptr::null()
-        }
-        Ok(_) => make_error("series type is invalid"),
-        Err(err) => make_error(err),
-    }
 }
 
 #[no_mangle]
@@ -200,6 +113,34 @@ pub unsafe extern "C" fn polars_dataframe_show(
     let df = &(*df).inner;
     let s = format!("{}", df);
     callback(user, s.as_ptr(), s.len());
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn polars_dataframe_get(
+    df: *mut polars_dataframe_t,
+    name: *const u8,
+    len: usize,
+    out: *mut *mut polars_series_t,
+) -> *const polars_error_t {
+    let name = unsafe { std::slice::from_raw_parts(name, len) };
+    let name = match std::str::from_utf8(name) {
+        Ok(path) => path,
+        Err(err) => return make_error(err),
+    };
+
+    let df = &(*df).inner;
+    let mut series = match df.select_series(&[name]) {
+        Ok(series) => series,
+        Err(err) => return make_error(err),
+    };
+
+    let Some(series) = series.pop() else {
+        return make_error(format!("dataframe has not column {name}"));
+    };
+
+    *out = series::make_series(series);
+
+    std::ptr::null()
 }
 
 #[no_mangle]

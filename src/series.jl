@@ -1,18 +1,32 @@
-struct Series{T} <: AbstractVector{T}
+mutable struct Series{T} <: AbstractVector{T}
     ptr::Ptr{polars_series_t}
+
+    function Series(ptr)
+        @assert ptr != C_NULL
+
+        T = polars_series_type(ptr) |> julia_wrapper
+        s = new{T}(ptr)
+
+        finalizer(polars_series_destroy, s)
+    end
 end
 
 Base.unsafe_convert(::Type{Ptr{polars_series_t}}, series::Series) = series.ptr
 
-Base.size(series::Series) = ((@ccall libpolars.polars_series_length(series::Ptr{polars_series_t})::Cuint),)
-function Base.getindex(series::Series{UInt32}, index)
-    out = Ref{UInt32}()
+Base.size(series::Series) = (polars_series_length(series),)
+
+function Base.getindex(series::Series{T}, index) where {T<:Union{Integer,AbstractFloat}}
+    @assert parentmodule(T) == Core "type $T is not supported"
+
+    out = Ref{T}()
     index = index - 1
-    err = @ccall libpolars.polars_series_get_u32(
-        series::Ptr{polars_series_t},
-        index::Cuint,
-        out::Ptr{UInt32},
-    )::Ptr{polars_error_t}
+
+    letter = T <: AbstractFloat ? "f" :
+             T <: Signed ? "i" : "u"
+    name = Symbol("polars_series_get_", letter, 8sizeof(T))
+    f = getproperty(API, name)
+
+    err = f(series, index, out)
     polars_error(err)
     out[]
 end
@@ -20,11 +34,7 @@ end
 function Series(name, values)
     ptr = Ref{Ptr{polars_series_t}}()
 
-    err = @ccall libpolars.polars_series_new(
-        name::Ptr{UInt8}, length(name)::UInt,
-        values::Ptr{UInt32}, length(values)::UInt,
-        ptr::Ptr{Ptr{polars_series_t}}
-    )::Ptr{polars_error_t}
+    err = polars_series_new(name, length(name), values, length(values), ptr)
     polars_error(err)
 
     Series{UInt32}(ptr[])
@@ -32,6 +42,6 @@ end
 
 function name(series)
     ptr = Ref{Ptr{Cchar}}()
-    len = @ccall libpolars.polars_series_name(series::Ptr{polars_series_t}, ptr::Ptr{Ptr{Cchar}})::Cuint
+    len = polars_series_name(series, ptr)
     unsafe_string(ptr[], len)
 end

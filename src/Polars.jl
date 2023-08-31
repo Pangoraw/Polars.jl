@@ -1,34 +1,33 @@
 module Polars
 
-# TODO: generate libpolars_jll
-const libpolars = "c-polars/target/debug/libpolars.so"
+include("./API.jl")
 
-struct polars_error_t end
-struct polars_series_t end
-struct polars_dataframe_t end
-struct polars_lazy_frame_t end
-struct polars_lazy_group_by_t end
-struct polars_expr_t end
+using .API
 
 include("./expr.jl")
 include("./series.jl")
 
 function polars_error(err::Ptr{polars_error_t})
     err == C_NULL && return
-    str = Ref{Ptr{Cchar}}()
-    len = @ccall libpolars.polars_error_message(err::Ptr{polars_error_t}, str::Ptr{Ptr{Cchar}})::Cuint
+    str = Ref{Ptr{UInt8}}()
+    len = polars_error_message(err, str)
     message = unsafe_string(str[], len)
-    @ccall libpolars.polars_error_destroy(err::Ptr{polars_error_t})::Cvoid
+    polars_error_destroy(err)
     error(message)
 end
 
 mutable struct DataFrame
     ptr::Ptr{polars_dataframe_t}
 
-    DataFrame(ptr) =
-        finalizer(new(ptr)) do df
-            @ccall libpolars.polars_dataframe_destroy(df::Ptr{polars_dataframe_t})::Cvoid
-        end
+    DataFrame(ptr) = finalizer(polars_dataframe_destroy, new(ptr))
+end
+
+Base.getindex(df::DataFrame, ss...) = [getindex(df, s) for s in ss] # this or select(df, ss...) ?
+function Base.getindex(df::DataFrame, s::Symbol)
+    s = string(s)::String
+    out = Ref{Ptr{polars_series_t}}()
+    series = polars_dataframe_get(df, s, length(s), out)
+    Series(out[])
 end
 
 Base.unsafe_convert(::Type{Ptr{polars_dataframe_t}}, df::DataFrame) = df.ptr
@@ -37,31 +36,26 @@ mutable struct LazyFrame
     ptr::Ptr{polars_lazy_frame_t}
 
     LazyFrame(ptr) =
-        finalizer(new(ptr)) do df
-            @ccall libpolars.polars_lazy_frame_destroy(df::Ptr{polars_lazy_frame_t})::Cvoid
-        end
+        finalizer(polars_lazy_frame_destroy, new(ptr))
 end
 
 Base.unsafe_convert(::Type{Ptr{polars_lazy_frame_t}}, df::LazyFrame) = df.ptr
 
 function lazy(df)
-    out = @ccall libpolars.polars_dataframe_lazy(df::Ptr{polars_dataframe_t})::Ptr{polars_lazy_frame_t}
+    out = polars_dataframe_lazy(df)
     LazyFrame(out)
 end
 
 function Base.collect(df::LazyFrame)
     out = Ref{Ptr{polars_dataframe_t}}()
-    err = @ccall libpolars.polars_lazy_frame_collect(df::Ptr{polars_lazy_frame_t}, out::Ptr{Ptr{polars_dataframe_t}})::Ptr{polars_error_t}
+    err = polars_lazy_frame_collect(df, out)
     polars_error(err)
     DataFrame(out[])
 end
 
 function read_parquet(path)
     out = Ref{Ptr{polars_dataframe_t}}()
-    err = @ccall libpolars.polars_dataframe_read_parquet(
-        path::Ptr{Cchar}, length(path)::Cuint,
-        out::Ptr{Ptr{polars_dataframe_t}},
-    )::Ptr{polars_error_t}
+    err = polars_dataframe_read_parquet(path, length(path), out)
     polars_error(err)
     DataFrame(out[])
 end
@@ -75,10 +69,7 @@ end
 function Base.show(io::IO, df::DataFrame)
     callback = @cfunction(_show_callback, Cvoid, (Any, Ptr{Cchar}, Cuint))
     ref = Ref(io)
-    @ccall libpolars.polars_dataframe_show(
-        df.ptr::Ptr{polars_dataframe_t}, ref::Any,
-        callback::Ptr{Cvoid},
-    )::Cvoid
+    polars_dataframe_show(df.ptr, ref, callback)
 end
 
 select!(df::LazyFrame, exprs...) = select!(df, collect(exprs)::Vector)
@@ -87,11 +78,7 @@ function select!(df::LazyFrame, exprs::Vector)
     exprs = convert(Vector{Expr}, exprs)
     @GC.preserve exprs begin
         exprs_ptrs = Ptr{polars_expr_t}[expr.ptr for expr in exprs]
-        @ccall libpolars.polars_lazy_frame_select(
-            df::Ptr{polars_lazy_frame_t},
-            exprs_ptrs::Ptr{Ptr{polars_expr_t}},
-            length(exprs_ptrs)::Cint,
-        )::Cvoid
+        polars_lazy_frame_select(df, exprs_ptrs, length(exprs_ptrs))
     end
     df
 end
@@ -104,20 +91,13 @@ with_columns(df, exprs...) = select(df, col("*"), exprs...)
 
 function Base.fetch(df::LazyFrame, n)
     out = Ref{Ptr{polars_dataframe_t}}()
-    err = @ccall libpolars.polars_lazy_frame_fetch(
-        df::Ptr{polars_lazy_frame_t},
-        n::UInt32,
-        out::Ptr{Ptr{polars_dataframe_t}},
-    )::Ptr{polars_error_t}
+    err = polars_lazy_frame_fetch(df, n, out)
     polars_error(err)
     DataFrame(out[])
 end
 
 function Base.filter!(df::LazyFrame, expr)
-    @ccall libpolars.polars_lazy_frame_filter(
-        df::Ptr{polars_lazy_frame_t},
-        expr::Ptr{polars_expr_t},
-    )::Cvoid
+    polars_lazy_frame_filter(df, expr)
     df
 end
 
@@ -125,9 +105,7 @@ Base.filter(df::LazyFrame, expr) = filter!(copy(df), expr)
 Base.filter(df::DataFrame, expr) = filter!(lazy(df), expr) |> collect
 
 function Base.copy(df::LazyFrame)
-    out = @ccall libpolars.polars_lazy_frame_clone(
-        df::Ptr{polars_lazy_frame_t}
-    )::Ptr{polars_lazy_frame_t}
+    out = polars_lazy_frame_clone(df)
     LazyFrame(out)
 end
 
@@ -140,11 +118,11 @@ function Base.join(a::LazyFrame, b::LazyFrame, exprs_a, exprs_b)
     @GC.preserve exprs_a exprs_b begin
         exprs_a_ptr = Ptr{polars_expr_t}[expr.ptr for expr in exprs_a]
         exprs_b_ptr = Ptr{polars_expr_t}[expr.ptr for expr in exprs_b]
-        out = @ccall libpolars.polars_lazy_frame_join_inner(
-            a::Ptr{polars_lazy_frame_t}, b::Ptr{polars_lazy_frame_t},
-            exprs_a_ptr::Ptr{Ptr{polars_expr_t}}, length(exprs_a_ptr)::Csize_t,
-            exprs_b_ptr::Ptr{Ptr{polars_expr_t}}, length(exprs_b_ptr)::Csize_t,
-        )::Ptr{polars_lazy_frame_t}
+        out = polars_lazy_frame_join_inner(
+            a, b,
+            exprs_a_ptr, length(exprs_a_ptr),
+            exprs_b_ptr, length(exprs_b_ptr),
+        )
     end
     LazyFrame(out)
 end
@@ -153,9 +131,7 @@ mutable struct LazyGroupBy
     ptr::Ptr{polars_lazy_group_by_t}
 
     LazyGroupBy(ptr) =
-        finalizer(new(ptr)) do gb
-            @ccall libpolars.polars_lazy_group_by_destroy(gb::Ptr{polars_lazy_group_by_t})::Cvoid
-        end
+        finalizer(polars_lazy_group_by_destroy, new(ptr))
 end
 
 Base.unsafe_convert(::Type{Ptr{polars_lazy_group_by_t}}, gb::LazyGroupBy) = gb.ptr
@@ -166,11 +142,7 @@ function groupby(df::LazyFrame, exprs::Vector)
     exprs = convert(Vector{Expr}, exprs)
     @GC.preserve exprs begin
         exprs_ptrs = Ptr{polars_expr_t}[expr.ptr for expr in exprs]
-        out = @ccall libpolars.polars_lazy_frame_group_by(
-            df::Ptr{polars_lazy_frame_t},
-            exprs_ptrs::Ptr{Ptr{polars_expr_t}},
-            length(exprs_ptrs)::Cint,
-        )::Ptr{polars_lazy_group_by_t}
+        out = polars_lazy_frame_group_by(df, exprs_ptrs, length(exprs_ptrs))
     end
     LazyGroupBy(out)
 end
@@ -181,13 +153,39 @@ function agg(gb::LazyGroupBy, exprs::Vector)
     exprs = convert(Vector{Expr}, exprs)
     @GC.preserve exprs begin
         exprs_ptrs = Ptr{polars_expr_t}[expr.ptr for expr in exprs]
-        out = @ccall libpolars.polars_lazy_group_by_agg(
-            gb::Ptr{polars_lazy_group_by_t},
-            exprs_ptrs::Ptr{Ptr{polars_expr_t}},
-            length(exprs_ptrs)::Cint,
-        )::Ptr{polars_lazy_frame_t}
+        out = polars_lazy_group_by_agg(gb, exprs_ptrs, length(exprs_ptrs))
     end
     LazyFrame(out)
+end
+
+function julia_wrapper(t)
+    if t == PolarsValueTypeNull
+        Missing
+    elseif t ==  PolarsValueTypeBoolean
+        Bool
+    elseif t ==  PolarsValueTypeUInt8
+        UInt8
+    elseif t ==  PolarsValueTypeUInt16
+        UInt16
+    elseif t ==  PolarsValueTypeUInt32
+        UInt32
+    elseif t ==  PolarsValueTypeUInt64
+        UInt64
+    elseif t ==  PolarsValueTypeInt8
+        Int8
+    elseif t ==  PolarsValueTypeInt16
+        Int16
+    elseif t ==  PolarsValueTypeInt32
+        Int32
+    elseif t ==  PolarsValueTypeInt64
+        Int64
+    elseif t ==  PolarsValueTypeFloat32
+        Float32
+    elseif t ==  PolarsValueTypeFloat64
+        Float64
+    elseif t ==  PolarsValueTypeUnknown
+        Nothing
+    end
 end
 
 export select, with_columns, fetch,
