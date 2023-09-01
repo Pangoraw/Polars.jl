@@ -38,7 +38,7 @@ export_symbol_prefixes = ["polars_", "Polars"]
 
 # the code in the following file will be copy-pasted to `output_file_path` before the generated code.
 # this is often used for applying custom patches, e.g. adding missing definitions.
-prologue_file_path = ""
+prologue_file_path = "prologue.jl"
 
 # the code in the following file will be copy-pasted to `output_file_path` after the generated code.
 # this is often used for applying custom patches.

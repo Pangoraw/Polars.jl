@@ -1,3 +1,6 @@
+import Pkg
+Pkg.instantiate()
+
 using Clang.Generators
 using Clang.LibClang.Clang_jll
 

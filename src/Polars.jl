@@ -61,13 +61,16 @@ function read_parquet(path)
 end
 
 function _show_callback(user, data, len)
-    s = unsafe_string(data, len)
-    write(user[], s)
-    nothing
+    try
+        n = unsafe_write(user[], data, len)
+        Int(n)
+    catch
+        -1
+    end
 end
 
 function Base.show(io::IO, df::DataFrame)
-    callback = @cfunction(_show_callback, Cvoid, (Any, Ptr{Cchar}, Cuint))
+    callback = @cfunction(_show_callback, Cssize_t, (Any, Ptr{Cchar}, Cuint))
     ref = Ref(io)
     polars_dataframe_show(df.ptr, ref, callback)
 end

@@ -1,9 +1,9 @@
 module API
 
-# TODO: use libpolars_jll
-const libpolars = "./c-polars/target/debug/libpolars.so"
-
 using CEnum
+
+const libpolars = joinpath(@__DIR__, "../c-polars/target/debug/libpolars.so")
+
 
 @cenum polars_value_type_t::UInt32 begin
     PolarsValueTypeNull = 0
@@ -35,7 +35,10 @@ mutable struct polars_series_t end
 
 mutable struct polars_value_t end
 
-# typedef void ( * IOCallback ) ( const void * user , const uint8_t * data , uintptr_t len )
+# typedef intptr_t ( * IOCallback ) ( const void * user , const uint8_t * data , uintptr_t len )
+"""
+The callback provided for display functions, returns -1 on error.
+"""
 const IOCallback = Ptr{Cvoid}
 
 function polars_error_message(err, data)
@@ -74,6 +77,14 @@ function polars_lazy_frame_clone(df)
     @ccall libpolars.polars_lazy_frame_clone(df::Ptr{polars_lazy_frame_t})::Ptr{polars_lazy_frame_t}
 end
 
+function polars_lazy_frame_sort(df, exprs, nexprs, descending, nulls_last, maintain_order)
+    @ccall libpolars.polars_lazy_frame_sort(df::Ptr{polars_lazy_frame_t}, exprs::Ptr{Ptr{polars_expr_t}}, nexprs::Csize_t, descending::Ptr{Bool}, nulls_last::Bool, maintain_order::Bool)::Cvoid
+end
+
+function polars_lazy_frame_concat(lfs, n, out)
+    @ccall libpolars.polars_lazy_frame_concat(lfs::Ptr{Ptr{polars_lazy_frame_t}}, n::Csize_t, out::Ptr{Ptr{polars_lazy_frame_t}})::Ptr{polars_error_t}
+end
+
 function polars_lazy_frame_select(df, exprs, nexprs)
     @ccall libpolars.polars_lazy_frame_select(df::Ptr{polars_lazy_frame_t}, exprs::Ptr{Ptr{polars_expr_t}}, nexprs::Csize_t)::Cvoid
 end
@@ -95,7 +106,7 @@ function polars_lazy_frame_join_inner(a, b, exprs_a, exprs_a_len, exprs_b, exprs
 end
 
 function polars_lazy_frame_fetch(df, n, out)
-    @ccall libpolars.polars_lazy_frame_fetch(df::Ptr{polars_lazy_frame_t}, n::UInt32, out::Ptr{Ptr{polars_dataframe_t}})::Ptr{polars_error_t}
+    @ccall libpolars.polars_lazy_frame_fetch(df::Ptr{polars_lazy_frame_t}, n::Csize_t, out::Ptr{Ptr{polars_dataframe_t}})::Ptr{polars_error_t}
 end
 
 function polars_lazy_group_by_destroy(gb)

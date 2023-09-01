@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{series::make_series, *};
 
 #[repr(C)]
 pub enum polars_value_type_t {
@@ -14,6 +14,7 @@ pub enum polars_value_type_t {
     PolarsValueTypeInt64,
     PolarsValueTypeFloat32,
     PolarsValueTypeFloat64,
+    PolarsValueTypeList,
     PolarsValueTypeUnknown,
 }
 
@@ -33,6 +34,7 @@ impl polars_value_type_t {
             DataType::Int64 => PolarsValueTypeInt64,
             DataType::Float32 => PolarsValueTypeFloat32,
             DataType::Float64 => PolarsValueTypeFloat64,
+            DataType::List(_) => PolarsValueTypeList,
             _ => PolarsValueTypeUnknown,
         }
     }
@@ -58,9 +60,7 @@ macro_rules! gen_value_get {
         ) -> *const polars_error_t {
             match (*value).inner {
                 AnyValue::$rt(value) => *out = value,
-                _ => {
-                    return make_error("value is not of type u32");
-                }
+                _ => return make_error(concat!("value is not of type ", stringify!($rt))),
             }
             std::ptr::null()
         }
@@ -78,3 +78,28 @@ gen_value_get!(polars_value_get_i32, i32, Int32);
 gen_value_get!(polars_value_get_i64, i64, Int64);
 gen_value_get!(polars_value_get_f32, f32, Float32);
 gen_value_get!(polars_value_get_f64, f64, Float64);
+
+/// Returns the value as a Series when the dtype of the value is a list.
+#[no_mangle]
+pub unsafe extern "C" fn polars_value_list_get(
+    value: *mut polars_value_t,
+    out: *mut *mut polars_series_t,
+) -> *const polars_error_t {
+    match &(*value).inner {
+        AnyValue::List(series) => *out = make_series(series.clone()),
+        _ => return make_error("value is not of type list"),
+    }
+    std::ptr::null()
+}
+
+/// Returns the element type of the provided value which must be a list.
+/// The value type is PolarsValueTypeUnknown if the value is not a list
+/// so makes sure it is one otherwise, you cannot differentiate between list<unkown>
+/// and unkown.
+#[no_mangle]
+pub unsafe extern "C" fn polars_value_list_type(value: *mut polars_value_t) -> polars_value_type_t {
+    match (*value).inner.dtype() {
+        DataType::List(eltype) => polars_value_type_t::from_dtype(&eltype),
+        _ => polars_value_type_t::PolarsValueTypeUnknown,
+    }
+}

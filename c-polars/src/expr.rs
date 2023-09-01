@@ -79,7 +79,7 @@ pub unsafe extern "C" fn polars_expr_col(
         Ok(value) => value,
         Err(err) => return make_error(err),
     };
-    let expr = col(&name);
+    let expr = col(name);
     *out = Box::into_raw(Box::new(polars_expr_t { inner: expr }));
     std::ptr::null()
 }

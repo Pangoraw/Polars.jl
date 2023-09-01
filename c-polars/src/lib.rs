@@ -1,6 +1,9 @@
 #![allow(non_camel_case_types)]
+#![feature(io_error_other)]
+#![allow(clippy::missing_safety_doc)]
 
 use std::ffi::c_void;
+use std::io::Write;
 
 use polars::prelude::*;
 
@@ -8,7 +11,9 @@ mod expr;
 mod series;
 mod value;
 
-type IOCallback = unsafe extern "cdecl" fn(user: *const c_void, data: *const u8, len: usize);
+/// The callback provided for display functions, returns -1 on error.
+type IOCallback =
+    unsafe extern "cdecl" fn(user: *const c_void, data: *const u8, len: usize) -> isize;
 
 pub struct polars_error_t {
     msg: String,
@@ -103,16 +108,32 @@ pub extern "C" fn polars_dataframe_read_parquet(
     std::ptr::null()
 }
 
+struct UserIOCallback(IOCallback, *const c_void);
+
+impl std::io::Write for UserIOCallback {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let n = unsafe { self.0(self.1, buf.as_ptr(), buf.len()) };
+        if n < 0 {
+            Err(std::io::Error::other("user callback error"))
+        } else {
+            Ok(n as usize)
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn polars_dataframe_show(
     df: *mut polars_dataframe_t,
     user: *const c_void,
     callback: IOCallback,
 ) {
-    // TODO: can we have streaming here?
     let df = &(*df).inner;
-    let s = format!("{}", df);
-    callback(user, s.as_ptr(), s.len());
+    let mut w = UserIOCallback(callback, user);
+    write!(w, "{df}").expect("failed to show dataframe");
 }
 
 #[no_mangle]
@@ -170,12 +191,52 @@ pub unsafe extern "C" fn polars_lazy_frame_clone(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn polars_lazy_frame_sort(
+    df: *mut polars_lazy_frame_t,
+    exprs: *const *const polars_expr_t,
+    nexprs: usize,
+    descending: *const bool,
+    nulls_last: bool,
+    maintain_order: bool,
+) {
+    let exprs: Vec<Expr> = (0..nexprs)
+        .map(|i| {
+            let expr = &(**exprs.add(i));
+            expr.inner.clone()
+        })
+        .collect();
+    let descending = std::slice::from_raw_parts(descending, nexprs);
+    let mut df = Box::from_raw(df);
+    df.inner = df
+        .inner
+        .sort_by_exprs(&exprs, descending, nulls_last, maintain_order);
+    std::mem::forget(df);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn polars_lazy_frame_concat(
+    lfs: *const *mut polars_lazy_frame_t,
+    n: usize,
+    out: *mut *mut polars_lazy_frame_t,
+) -> *const polars_error_t {
+    let frames: Vec<LazyFrame> = (1..n).map(|i| (**lfs.add(i)).inner.clone()).collect();
+
+    let df = match concat(&frames, UnionArgs::default()) {
+        Ok(df) => df,
+        Err(err) => return make_error(err),
+    };
+    *out = Box::into_raw(Box::new(polars_lazy_frame_t { inner: df }));
+
+    std::ptr::null()
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn polars_lazy_frame_select(
     df: *mut polars_lazy_frame_t,
     exprs: *const *const polars_expr_t,
     nexprs: usize,
 ) {
-    let exprs: Vec<Expr> = (0..nexprs as usize)
+    let exprs: Vec<Expr> = (0..nexprs)
         .map(|i| {
             let expr = &(**exprs.add(i));
             expr.inner.clone()
@@ -218,7 +279,7 @@ pub unsafe extern "C" fn polars_lazy_frame_group_by(
     exprs: *const *const polars_expr_t,
     nexprs: usize,
 ) -> *mut polars_lazy_group_by_t {
-    let exprs: Vec<Expr> = (0..nexprs as usize)
+    let exprs: Vec<Expr> = (0..nexprs)
         .map(|i| {
             let expr = &(**exprs.add(i));
             expr.inner.clone()
@@ -237,13 +298,13 @@ pub unsafe extern "C" fn polars_lazy_frame_join_inner(
     exprs_b: *const *const polars_expr_t,
     exprs_b_len: usize,
 ) -> *mut polars_lazy_frame_t {
-    let exprs_a: Vec<Expr> = (0..exprs_a_len as usize)
+    let exprs_a: Vec<Expr> = (0..exprs_a_len)
         .map(|i| {
             let expr = &(**exprs_a.add(i));
             expr.inner.clone()
         })
         .collect();
-    let exprs_b: Vec<Expr> = (0..exprs_b_len as usize)
+    let exprs_b: Vec<Expr> = (0..exprs_b_len)
         .map(|i| {
             let expr = &(**exprs_b.add(i));
             expr.inner.clone()
@@ -262,11 +323,11 @@ pub unsafe extern "C" fn polars_lazy_frame_join_inner(
 #[no_mangle]
 pub unsafe extern "C" fn polars_lazy_frame_fetch(
     df: *mut polars_lazy_frame_t,
-    n: u32,
+    n: usize,
     out: *mut *mut polars_dataframe_t,
 ) -> *const polars_error_t {
     let df = (*df).inner.clone();
-    *out = make_dataframe(match df.fetch(n as usize) {
+    *out = make_dataframe(match df.fetch(n) {
         Ok(value) => value,
         Err(err) => return make_error(err),
     });
@@ -285,7 +346,7 @@ pub unsafe extern "C" fn polars_lazy_group_by_agg(
     exprs: *const *const polars_expr_t,
     nexprs: usize,
 ) -> *mut polars_lazy_frame_t {
-    let exprs: Vec<Expr> = (0..nexprs as usize)
+    let exprs: Vec<Expr> = (0..nexprs)
         .map(|i| {
             let expr = &(**exprs.add(i));
             expr.inner.clone()

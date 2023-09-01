@@ -2,6 +2,7 @@ pub fn main() {
     let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
 
     if std::env::var("GENERATE_INCLUDE").is_ok() {
+        println!("Build head file");
         cbindgen::Builder::new()
             .with_crate(crate_dir)
             .with_pragma_once(true)
