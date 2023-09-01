@@ -30,9 +30,7 @@ pub unsafe extern "C" fn polars_series_destroy(series: *mut polars_series_t) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn polars_series_type(
-    series: *mut polars_series_t,
-) -> polars_value_type_t {
+pub unsafe extern "C" fn polars_series_type(series: *mut polars_series_t) -> polars_value_type_t {
     polars_value_type_t::from_dtype((*series).inner.dtype())
 }
 

@@ -11,7 +11,7 @@ julia> customers = read_parquet("NONE_pandas_pyarrow_customer.parquet") |> lazy;
 
 julia> nations = read_parquet("NONE_pandas_pyarrow_nation.parquet") |> lazy;
 
-julia> customers_nations = join(customers, nations, [col("nation_key")], [col("nation_key")]);
+julia> customers_nations = innerjoin(customers, nations, col("nation_key"));
 
 julia> gb = groupby(customers_nations, [col("nation_key")]);
 

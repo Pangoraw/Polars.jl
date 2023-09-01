@@ -1,9 +1,9 @@
 module API
 
-# TODO: use libpolars_jll
-const libpolars = "./c-polars/target/debug/libpolars.so"
-
 using CEnum
+
+const libpolars = joinpath(@__DIR__, "../c-polars/target/debug/libpolars.so")
+
 
 @cenum polars_value_type_t::UInt32 begin
     PolarsValueTypeNull = 0
@@ -18,7 +18,8 @@ using CEnum
     PolarsValueTypeInt64 = 9
     PolarsValueTypeFloat32 = 10
     PolarsValueTypeFloat64 = 11
-    PolarsValueTypeUnknown = 12
+    PolarsValueTypeList = 12
+    PolarsValueTypeUnknown = 13
 end
 
 mutable struct polars_dataframe_t end
@@ -35,8 +36,15 @@ mutable struct polars_series_t end
 
 mutable struct polars_value_t end
 
-# typedef void ( * IOCallback ) ( const void * user , const uint8_t * data , uintptr_t len )
+# typedef intptr_t ( * IOCallback ) ( const void * user , const uint8_t * data , uintptr_t len )
+"""
+The callback provided for display functions, returns -1 on error.
+"""
 const IOCallback = Ptr{Cvoid}
+
+function polars_version(out)
+    @ccall libpolars.polars_version(out::Ptr{Ptr{UInt8}})::Csize_t
+end
 
 function polars_error_message(err, data)
     @ccall libpolars.polars_error_message(err::Ptr{polars_error_t}, data::Ptr{Ptr{UInt8}})::Csize_t
@@ -48,6 +56,10 @@ end
 
 function polars_dataframe_destroy(df)
     @ccall libpolars.polars_dataframe_destroy(df::Ptr{polars_dataframe_t})::Cvoid
+end
+
+function polars_dataframe_write_parquet(df, user, callback)
+    @ccall libpolars.polars_dataframe_write_parquet(df::Ptr{polars_dataframe_t}, user::Ptr{Cvoid}, callback::IOCallback)::Ptr{polars_error_t}
 end
 
 function polars_dataframe_read_parquet(path, pathlen, out)
@@ -74,6 +86,14 @@ function polars_lazy_frame_clone(df)
     @ccall libpolars.polars_lazy_frame_clone(df::Ptr{polars_lazy_frame_t})::Ptr{polars_lazy_frame_t}
 end
 
+function polars_lazy_frame_sort(df, exprs, nexprs, descending, nulls_last, maintain_order)
+    @ccall libpolars.polars_lazy_frame_sort(df::Ptr{polars_lazy_frame_t}, exprs::Ptr{Ptr{polars_expr_t}}, nexprs::Csize_t, descending::Ptr{Bool}, nulls_last::Bool, maintain_order::Bool)::Cvoid
+end
+
+function polars_lazy_frame_concat(lfs, n, out)
+    @ccall libpolars.polars_lazy_frame_concat(lfs::Ptr{Ptr{polars_lazy_frame_t}}, n::Csize_t, out::Ptr{Ptr{polars_lazy_frame_t}})::Ptr{polars_error_t}
+end
+
 function polars_lazy_frame_select(df, exprs, nexprs)
     @ccall libpolars.polars_lazy_frame_select(df::Ptr{polars_lazy_frame_t}, exprs::Ptr{Ptr{polars_expr_t}}, nexprs::Csize_t)::Cvoid
 end
@@ -95,7 +115,7 @@ function polars_lazy_frame_join_inner(a, b, exprs_a, exprs_a_len, exprs_b, exprs
 end
 
 function polars_lazy_frame_fetch(df, n, out)
-    @ccall libpolars.polars_lazy_frame_fetch(df::Ptr{polars_lazy_frame_t}, n::UInt32, out::Ptr{Ptr{polars_dataframe_t}})::Ptr{polars_error_t}
+    @ccall libpolars.polars_lazy_frame_fetch(df::Ptr{polars_lazy_frame_t}, n::Csize_t, out::Ptr{Ptr{polars_dataframe_t}})::Ptr{polars_error_t}
 end
 
 function polars_lazy_group_by_destroy(gb)
@@ -544,6 +564,24 @@ end
 
 function polars_value_get_f64(value, out)
     @ccall libpolars.polars_value_get_f64(value::Ptr{polars_value_t}, out::Ptr{Cdouble})::Ptr{polars_error_t}
+end
+
+"""
+    polars_value_list_get(value, out)
+
+Returns the value as a Series when the dtype of the value is a list.
+"""
+function polars_value_list_get(value, out)
+    @ccall libpolars.polars_value_list_get(value::Ptr{polars_value_t}, out::Ptr{Ptr{polars_series_t}})::Ptr{polars_error_t}
+end
+
+"""
+    polars_value_list_type(value)
+
+Returns the element type of the provided value which must be a list. The value type is PolarsValueTypeUnknown if the value is not a list so makes sure it is one otherwise, you cannot differentiate between list<unkown> and unkown.
+"""
+function polars_value_list_type(value)
+    @ccall libpolars.polars_value_list_type(value::Ptr{polars_value_t})::polars_value_type_t
 end
 
 # exports

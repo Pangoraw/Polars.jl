@@ -18,6 +18,7 @@ typedef enum polars_value_type_t {
   PolarsValueTypeInt64,
   PolarsValueTypeFloat32,
   PolarsValueTypeFloat64,
+  PolarsValueTypeList,
   PolarsValueTypeUnknown,
 } polars_value_type_t;
 
@@ -35,13 +36,22 @@ typedef struct polars_series_t polars_series_t;
 
 typedef struct polars_value_t polars_value_t;
 
-typedef void (*IOCallback)(const void *user, const uint8_t *data, uintptr_t len);
+/**
+ * The callback provided for display functions, returns -1 on error.
+ */
+typedef intptr_t (*IOCallback)(const void *user, const uint8_t *data, uintptr_t len);
+
+uintptr_t polars_version(const uint8_t **out);
 
 uintptr_t polars_error_message(const struct polars_error_t *err, const uint8_t **data);
 
 void polars_error_destroy(const struct polars_error_t *err);
 
 void polars_dataframe_destroy(struct polars_dataframe_t *df);
+
+const struct polars_error_t *polars_dataframe_write_parquet(struct polars_dataframe_t *df,
+                                                            const void *user,
+                                                            IOCallback callback);
 
 const struct polars_error_t *polars_dataframe_read_parquet(const uint8_t *path,
                                                            uintptr_t pathlen,
@@ -59,6 +69,17 @@ struct polars_lazy_frame_t *polars_dataframe_lazy(struct polars_dataframe_t *df)
 void polars_lazy_frame_destroy(struct polars_lazy_frame_t *df);
 
 struct polars_lazy_frame_t *polars_lazy_frame_clone(struct polars_lazy_frame_t *df);
+
+void polars_lazy_frame_sort(struct polars_lazy_frame_t *df,
+                            const struct polars_expr_t *const *exprs,
+                            uintptr_t nexprs,
+                            const bool *descending,
+                            bool nulls_last,
+                            bool maintain_order);
+
+const struct polars_error_t *polars_lazy_frame_concat(struct polars_lazy_frame_t *const *lfs,
+                                                      uintptr_t n,
+                                                      struct polars_lazy_frame_t **out);
 
 void polars_lazy_frame_select(struct polars_lazy_frame_t *df,
                               const struct polars_expr_t *const *exprs,
@@ -81,7 +102,7 @@ struct polars_lazy_frame_t *polars_lazy_frame_join_inner(struct polars_lazy_fram
                                                          uintptr_t exprs_b_len);
 
 const struct polars_error_t *polars_lazy_frame_fetch(struct polars_lazy_frame_t *df,
-                                                     uint32_t n,
+                                                     uintptr_t n,
                                                      struct polars_dataframe_t **out);
 
 void polars_lazy_group_by_destroy(const struct polars_lazy_group_by_t *gb);
@@ -359,3 +380,17 @@ const struct polars_error_t *polars_value_get_i64(struct polars_value_t *value, 
 const struct polars_error_t *polars_value_get_f32(struct polars_value_t *value, float *out);
 
 const struct polars_error_t *polars_value_get_f64(struct polars_value_t *value, double *out);
+
+/**
+ * Returns the value as a Series when the dtype of the value is a list.
+ */
+const struct polars_error_t *polars_value_list_get(struct polars_value_t *value,
+                                                   struct polars_series_t **out);
+
+/**
+ * Returns the element type of the provided value which must be a list.
+ * The value type is PolarsValueTypeUnknown if the value is not a list
+ * so makes sure it is one otherwise, you cannot differentiate between list<unkown>
+ * and unkown.
+ */
+enum polars_value_type_t polars_value_list_type(struct polars_value_t *value);
