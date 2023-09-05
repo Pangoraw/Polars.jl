@@ -47,6 +47,10 @@ void polars_error_destroy(const struct polars_error_t *err);
 
 void polars_dataframe_destroy(struct polars_dataframe_t *df);
 
+const struct polars_error_t *polars_dataframe_write_parquet(struct polars_dataframe_t *df,
+                                                            const void *user,
+                                                            IOCallback callback);
+
 const struct polars_error_t *polars_dataframe_read_parquet(const uint8_t *path,
                                                            uintptr_t pathlen,
                                                            struct polars_dataframe_t **out);

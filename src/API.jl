@@ -18,7 +18,8 @@ const libpolars = joinpath(@__DIR__, "../c-polars/target/debug/libpolars.so")
     PolarsValueTypeInt64 = 9
     PolarsValueTypeFloat32 = 10
     PolarsValueTypeFloat64 = 11
-    PolarsValueTypeUnknown = 12
+    PolarsValueTypeList = 12
+    PolarsValueTypeUnknown = 13
 end
 
 mutable struct polars_dataframe_t end
@@ -51,6 +52,10 @@ end
 
 function polars_dataframe_destroy(df)
     @ccall libpolars.polars_dataframe_destroy(df::Ptr{polars_dataframe_t})::Cvoid
+end
+
+function polars_dataframe_write_parquet(df, user, callback)
+    @ccall libpolars.polars_dataframe_write_parquet(df::Ptr{polars_dataframe_t}, user::Ptr{Cvoid}, callback::IOCallback)::Ptr{polars_error_t}
 end
 
 function polars_dataframe_read_parquet(path, pathlen, out)
@@ -555,6 +560,24 @@ end
 
 function polars_value_get_f64(value, out)
     @ccall libpolars.polars_value_get_f64(value::Ptr{polars_value_t}, out::Ptr{Cdouble})::Ptr{polars_error_t}
+end
+
+"""
+    polars_value_list_get(value, out)
+
+Returns the value as a Series when the dtype of the value is a list.
+"""
+function polars_value_list_get(value, out)
+    @ccall libpolars.polars_value_list_get(value::Ptr{polars_value_t}, out::Ptr{Ptr{polars_series_t}})::Ptr{polars_error_t}
+end
+
+"""
+    polars_value_list_type(value)
+
+Returns the element type of the provided value which must be a list. The value type is PolarsValueTypeUnknown if the value is not a list so makes sure it is one otherwise, you cannot differentiate between list<unkown> and unkown.
+"""
+function polars_value_list_type(value)
+    @ccall libpolars.polars_value_list_type(value::Ptr{polars_value_t})::polars_value_type_t
 end
 
 # exports

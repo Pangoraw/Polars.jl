@@ -1,5 +1,4 @@
 #![allow(non_camel_case_types)]
-#![feature(io_error_other)]
 #![allow(clippy::missing_safety_doc)]
 
 use std::ffi::c_void;
@@ -82,6 +81,22 @@ pub unsafe extern "C" fn polars_dataframe_destroy(df: *mut polars_dataframe_t) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn polars_dataframe_write_parquet(
+    df: *mut polars_dataframe_t,
+    user: *const c_void,
+    callback: IOCallback,
+) -> *const polars_error_t {
+    let df = &mut (*df).inner;
+
+    let w = UserIOCallback(callback, user);
+    if let Err(err) = ParquetWriter::new(w).finish(df) {
+        return make_error(err);
+    }
+
+    std::ptr::null()
+}
+
+#[no_mangle]
 pub extern "C" fn polars_dataframe_read_parquet(
     path: *const u8,
     pathlen: usize,
@@ -114,7 +129,10 @@ impl std::io::Write for UserIOCallback {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let n = unsafe { self.0(self.1, buf.as_ptr(), buf.len()) };
         if n < 0 {
-            Err(std::io::Error::other("user callback error"))
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "user callback error",
+            ))
         } else {
             Ok(n as usize)
         }
