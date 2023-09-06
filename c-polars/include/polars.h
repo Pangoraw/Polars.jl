@@ -41,6 +41,8 @@ typedef struct polars_value_t polars_value_t;
  */
 typedef intptr_t (*IOCallback)(const void *user, const uint8_t *data, uintptr_t len);
 
+uintptr_t polars_version(const uint8_t **out);
+
 uintptr_t polars_error_message(const struct polars_error_t *err, const uint8_t **data);
 
 void polars_error_destroy(const struct polars_error_t *err);

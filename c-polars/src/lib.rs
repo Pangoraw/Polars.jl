@@ -10,6 +10,15 @@ mod expr;
 mod series;
 mod value;
 
+#[no_mangle]
+pub unsafe extern "C" fn polars_version(out: *mut *const u8) -> usize {
+    let v = polars::VERSION;
+    if !out.is_null() {
+        *out = v.as_ptr();
+    }
+    v.len()
+}
+
 /// The callback provided for display functions, returns -1 on error.
 type IOCallback =
     unsafe extern "cdecl" fn(user: *const c_void, data: *const u8, len: usize) -> isize;

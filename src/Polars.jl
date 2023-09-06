@@ -7,6 +7,13 @@ using .API
 include("./expr.jl")
 include("./series.jl")
 
+function version()
+    out = Ref{Ptr{UInt8}}()
+    len = polars_version(out)
+    ver = unsafe_string(out[], len)
+    VersionNumber(ver)
+end
+
 function polars_error(err::Ptr{polars_error_t})
     err == C_NULL && return
     str = Ref{Ptr{UInt8}}()

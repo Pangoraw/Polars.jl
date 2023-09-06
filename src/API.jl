@@ -42,6 +42,10 @@ The callback provided for display functions, returns -1 on error.
 """
 const IOCallback = Ptr{Cvoid}
 
+function polars_version(out)
+    @ccall libpolars.polars_version(out::Ptr{Ptr{UInt8}})::Csize_t
+end
+
 function polars_error_message(err, data)
     @ccall libpolars.polars_error_message(err::Ptr{polars_error_t}, data::Ptr{Ptr{UInt8}})::Csize_t
 end
