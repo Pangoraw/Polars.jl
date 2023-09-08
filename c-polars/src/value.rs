@@ -15,6 +15,7 @@ pub enum polars_value_type_t {
     PolarsValueTypeFloat32,
     PolarsValueTypeFloat64,
     PolarsValueTypeList,
+    PolarsValueTypeUtf8,
     PolarsValueTypeUnknown,
 }
 
@@ -35,6 +36,7 @@ impl polars_value_type_t {
             DataType::Float32 => PolarsValueTypeFloat32,
             DataType::Float64 => PolarsValueTypeFloat64,
             DataType::List(_) => PolarsValueTypeList,
+            DataType::Utf8 => PolarsValueTypeUtf8,
             _ => PolarsValueTypeUnknown,
         }
     }
@@ -90,6 +92,22 @@ pub unsafe extern "C" fn polars_value_list_get(
         _ => return make_error("value is not of type list"),
     }
     std::ptr::null()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn polars_value_utf8_get(
+    value: *mut polars_value_t,
+    user: *mut c_void,
+    callback: IOCallback,
+) -> *const polars_error_t {
+    let mut w = UserIOCallback(callback, user);
+    let Err(err) = (match (*value).inner {
+        AnyValue::Utf8(s) => w.write(s.as_bytes()),
+        _ => return make_error("value is not of type utf8"),
+    }) else {
+        return std::ptr::null();
+    };
+    make_error(err)
 }
 
 /// Returns the element type of the provided value which must be a list.

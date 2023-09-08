@@ -1,7 +1,14 @@
 name = "Polars"
 uuid = "111185ca-2e06-4adb-a8ea-1bf81c70356f"
+license = "MIT"
 authors = ["Paul Berg <paul@plutojl.org>"]
 version = "0.1.0"
 
+[compat]
+julia = "^1.9"
+CEnum = "^0.4"
+libpolars_jll = "^0.1"
+
 [deps]
 CEnum = "fa961155-64e5-5f13-b03f-caf6b980ea82"
+libpolars_jll = "155e46ed-8d3e-59a0-8e1f-b48074a428ad"

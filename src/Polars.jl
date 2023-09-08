@@ -33,7 +33,8 @@ Base.getindex(df::DataFrame, ss...) = [getindex(df, s) for s in ss] # this or se
 function Base.getindex(df::DataFrame, s::Symbol)
     s = string(s)::String
     out = Ref{Ptr{polars_series_t}}()
-    series = polars_dataframe_get(df, s, length(s), out)
+    err = polars_dataframe_get(df, s, length(s), out)
+    polars_error(err)
     Series(out[])
 end
 

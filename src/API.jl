@@ -1,8 +1,11 @@
 module API
 
+using libpolars_jll
+export libpolars_jll
+
 using CEnum
 
-const libpolars = joinpath(@__DIR__, "../c-polars/target/debug/libpolars.so")
+# const libpolars = joinpath(@__DIR__, "../c-polars/target/debug/libpolars.so")
 
 
 @cenum polars_value_type_t::UInt32 begin

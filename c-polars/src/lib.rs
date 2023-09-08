@@ -85,6 +85,22 @@ pub fn polars_dataframe_new() -> *mut polars_dataframe_t {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn polars_dataframe_new_from_series(
+    series: *const *mut polars_series_t,
+    nseries: usize,
+    out: *mut *mut polars_dataframe_t,
+) -> *const polars_error_t {
+    let slice: &[*mut polars_series_t] = std::slice::from_raw_parts(series, nseries);
+    let series: Vec<Series> = slice.iter().map(|s| (**s).inner.clone()).collect();
+    let df = match DataFrame::new(series) {
+        Ok(df) => df,
+        Err(err) => return make_error(err),
+    };
+    *out = make_dataframe(df);
+    std::ptr::null()
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn polars_dataframe_destroy(df: *mut polars_dataframe_t) {
     let _ = Box::from_raw(df);
 }
@@ -132,7 +148,7 @@ pub extern "C" fn polars_dataframe_read_parquet(
     std::ptr::null()
 }
 
-struct UserIOCallback(IOCallback, *const c_void);
+pub(crate) struct UserIOCallback(IOCallback, *const c_void);
 
 impl std::io::Write for UserIOCallback {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
@@ -226,11 +242,9 @@ pub unsafe extern "C" fn polars_lazy_frame_sort(
     nulls_last: bool,
     maintain_order: bool,
 ) {
-    let exprs: Vec<Expr> = (0..nexprs)
-        .map(|i| {
-            let expr = &(**exprs.add(i));
-            expr.inner.clone()
-        })
+    let exprs: Vec<Expr> = std::slice::from_raw_parts(exprs, nexprs)
+        .iter()
+        .map(|expr| (**expr).inner.clone())
         .collect();
     let descending = std::slice::from_raw_parts(descending, nexprs);
     let mut df = Box::from_raw(df);
@@ -263,11 +277,9 @@ pub unsafe extern "C" fn polars_lazy_frame_select(
     exprs: *const *const polars_expr_t,
     nexprs: usize,
 ) {
-    let exprs: Vec<Expr> = (0..nexprs)
-        .map(|i| {
-            let expr = &(**exprs.add(i));
-            expr.inner.clone()
-        })
+    let exprs: Vec<Expr> = std::slice::from_raw_parts(exprs, nexprs)
+        .iter()
+        .map(|expr| (**expr).inner.clone())
         .collect();
     let mut df = Box::from_raw(df);
     df.inner = df.inner.select(&exprs);
@@ -306,11 +318,9 @@ pub unsafe extern "C" fn polars_lazy_frame_group_by(
     exprs: *const *const polars_expr_t,
     nexprs: usize,
 ) -> *mut polars_lazy_group_by_t {
-    let exprs: Vec<Expr> = (0..nexprs)
-        .map(|i| {
-            let expr = &(**exprs.add(i));
-            expr.inner.clone()
-        })
+    let exprs: Vec<Expr> = std::slice::from_raw_parts(exprs, nexprs)
+        .iter()
+        .map(|expr| (**expr).inner.clone())
         .collect();
     let gb = (*df).inner.clone().groupby(&exprs);
     Box::into_raw(Box::new(polars_lazy_group_by_t { inner: gb }))
@@ -325,17 +335,13 @@ pub unsafe extern "C" fn polars_lazy_frame_join_inner(
     exprs_b: *const *const polars_expr_t,
     exprs_b_len: usize,
 ) -> *mut polars_lazy_frame_t {
-    let exprs_a: Vec<Expr> = (0..exprs_a_len)
-        .map(|i| {
-            let expr = &(**exprs_a.add(i));
-            expr.inner.clone()
-        })
+    let exprs_a: Vec<Expr> = std::slice::from_raw_parts(exprs_a, exprs_a_len)
+        .iter()
+        .map(|expr| (**expr).inner.clone())
         .collect();
-    let exprs_b: Vec<Expr> = (0..exprs_b_len)
-        .map(|i| {
-            let expr = &(**exprs_b.add(i));
-            expr.inner.clone()
-        })
+    let exprs_b: Vec<Expr> = std::slice::from_raw_parts(exprs_b, exprs_b_len)
+        .iter()
+        .map(|expr| (**expr).inner.clone())
         .collect();
     let df = LazyFrame::join(
         (*a).inner.clone(),
@@ -373,11 +379,9 @@ pub unsafe extern "C" fn polars_lazy_group_by_agg(
     exprs: *const *const polars_expr_t,
     nexprs: usize,
 ) -> *mut polars_lazy_frame_t {
-    let exprs: Vec<Expr> = (0..nexprs)
-        .map(|i| {
-            let expr = &(**exprs.add(i));
-            expr.inner.clone()
-        })
+    let exprs: Vec<Expr> = std::slice::from_raw_parts(exprs, nexprs)
+        .iter()
+        .map(|expr| (**expr).inner.clone())
         .collect();
     Box::into_raw(Box::new(polars_lazy_frame_t {
         inner: (*gb).inner.clone().agg(&exprs),

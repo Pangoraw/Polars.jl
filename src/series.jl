@@ -5,6 +5,7 @@ mutable struct Series{T} <: AbstractVector{T}
         @assert ptr != C_NULL
 
         T = polars_series_type(ptr) |> julia_wrapper
+        T == Nothing && error("cannot yet make series of this type")
         s = new{T}(ptr)
 
         finalizer(polars_series_destroy, s)
