@@ -41,6 +41,30 @@ pub unsafe extern "C" fn polars_series_length(series: *mut polars_series_t) -> u
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn polars_series_null_count(series: *mut polars_series_t) -> usize {
+    assert!(!series.is_null());
+    (*series).inner.null_count()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn polars_series_schema(series: *mut polars_series_t) -> ArrowSchema {
+    assert!(!series.is_null());
+    ffi::export_field_to_c(&(*series).inner.field().to_arrow())
+}
+
+/// Returns whether or not the value at index `index` is null, return false if the index is out of
+/// bounds.
+#[no_mangle]
+pub unsafe extern "C" fn polars_series_is_null(series: *mut polars_series_t, index: usize) -> bool {
+    assert!(!series.is_null());
+    match (*series).inner.get(index) {
+        Ok(AnyValue::Null) => true,
+        Ok(_) => false,
+        Err(_) => false,
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn polars_series_name(
     series: *mut polars_series_t,
     out: *mut *const u8,

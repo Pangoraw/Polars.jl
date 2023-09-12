@@ -5,8 +5,36 @@ export libpolars_jll
 
 using CEnum
 
-# const libpolars = joinpath(@__DIR__, "../c-polars/target/debug/libpolars.so")
+const libpolars_local = joinpath(@__DIR__, "../c-polars/target/debug/libpolars.so")
+@static if isfile(libpolars_local)
+    const libpolars = libpolars_local
+end
 
+
+struct ArrowSchema
+    format::Cstring
+    name::Cstring
+    metadata::Cstring
+    flags::Int64
+    n_children::Int64
+    children::Ptr{Ptr{ArrowSchema}}
+    dictionary::Ptr{ArrowSchema}
+    release::Ptr{Cvoid}
+    private_data::Ptr{Cvoid}
+end
+
+struct ArrowArray
+    length::Int64
+    null_count::Int64
+    offset::Int64
+    n_buffers::Int64
+    n_children::Int64
+    buffers::Ptr{Ptr{Cvoid}}
+    children::Ptr{Ptr{ArrowArray}}
+    dictionary::Ptr{ArrowArray}
+    release::Ptr{Cvoid}
+    private_data::Ptr{Cvoid}
+end
 
 @cenum polars_value_type_t::UInt32 begin
     PolarsValueTypeNull = 0
@@ -22,7 +50,10 @@ using CEnum
     PolarsValueTypeFloat32 = 10
     PolarsValueTypeFloat64 = 11
     PolarsValueTypeList = 12
-    PolarsValueTypeUnknown = 13
+    PolarsValueTypeUtf8 = 13
+    PolarsValueTypeStruct = 14
+    PolarsValueTypeBinary = 15
+    PolarsValueTypeUnknown = 16
 end
 
 mutable struct polars_dataframe_t end
@@ -55,6 +86,36 @@ end
 
 function polars_error_destroy(err)
     @ccall libpolars.polars_error_destroy(err::Ptr{polars_error_t})::Cvoid
+end
+
+function polars_dataframe_size(df, rows, cols)
+    @ccall libpolars.polars_dataframe_size(df::Ptr{polars_dataframe_t}, rows::Ptr{Csize_t}, cols::Ptr{Csize_t})::Cvoid
+end
+
+"""
+    polars_dataframe_new_from_carrow(cfield, carray)
+
+Creates a DataFrame from a series of [`ArrowArray`](@ref) and [`ArrowSchema`](@ref) compatible the arrow C-ABI.
+
+# Safety The field array should be valid [`ArrowSchema`](@ref) according to the C Data Interface. The array array should be valid [`ArrowArray`](@ref) according to the C Data Interface, this means that the memory ownership is transferred in the created arrow::Array. Therefore, the caller should *not* free the underlying memories for this arrow as this will be done through the release field of the array.
+
+Returns null if something went wrong.
+"""
+function polars_dataframe_new_from_carrow(cfield, carray)
+    @ccall libpolars.polars_dataframe_new_from_carrow(cfield::Ptr{ArrowSchema}, carray::ArrowArray)::Ptr{polars_dataframe_t}
+end
+
+"""
+    polars_dataframe_schema(df)
+
+Returns a [`ArrowSchema`](@ref) describing the dataframe's schema according to Arrow C Data interface.
+"""
+function polars_dataframe_schema(df)
+    @ccall libpolars.polars_dataframe_schema(df::Ptr{polars_dataframe_t})::ArrowSchema
+end
+
+function polars_dataframe_new_from_series(series, nseries, out)
+    @ccall libpolars.polars_dataframe_new_from_series(series::Ptr{Ptr{polars_series_t}}, nseries::Csize_t, out::Ptr{Ptr{polars_dataframe_t}})::Ptr{polars_error_t}
 end
 
 function polars_dataframe_destroy(df)
@@ -95,6 +156,10 @@ end
 
 function polars_lazy_frame_concat(lfs, n, out)
     @ccall libpolars.polars_lazy_frame_concat(lfs::Ptr{Ptr{polars_lazy_frame_t}}, n::Csize_t, out::Ptr{Ptr{polars_lazy_frame_t}})::Ptr{polars_error_t}
+end
+
+function polars_lazy_frame_with_columns(df, exprs, nexprs)
+    @ccall libpolars.polars_lazy_frame_with_columns(df::Ptr{polars_lazy_frame_t}, exprs::Ptr{Ptr{polars_expr_t}}, nexprs::Csize_t)::Cvoid
 end
 
 function polars_lazy_frame_select(df, exprs, nexprs)
@@ -157,6 +222,14 @@ function polars_expr_literal_u64(value)
     @ccall libpolars.polars_expr_literal_u64(value::UInt64)::Ptr{polars_expr_t}
 end
 
+function polars_expr_literal_f32(value)
+    @ccall libpolars.polars_expr_literal_f32(value::Cfloat)::Ptr{polars_expr_t}
+end
+
+function polars_expr_literal_f64(value)
+    @ccall libpolars.polars_expr_literal_f64(value::Cdouble)::Ptr{polars_expr_t}
+end
+
 function polars_expr_literal_utf8(s, len, out)
     @ccall libpolars.polars_expr_literal_utf8(s::Ptr{UInt8}, len::Csize_t, out::Ptr{Ptr{polars_expr_t}})::Ptr{polars_error_t}
 end
@@ -167,6 +240,18 @@ end
 
 function polars_expr_alias(expr, name, len, out)
     @ccall libpolars.polars_expr_alias(expr::Ptr{polars_expr_t}, name::Ptr{UInt8}, len::Csize_t, out::Ptr{Ptr{polars_expr_t}})::Ptr{polars_error_t}
+end
+
+function polars_expr_prefix(expr, name, len, out)
+    @ccall libpolars.polars_expr_prefix(expr::Ptr{polars_expr_t}, name::Ptr{UInt8}, len::Csize_t, out::Ptr{Ptr{polars_expr_t}})::Ptr{polars_error_t}
+end
+
+function polars_expr_suffix(expr, name, len, out)
+    @ccall libpolars.polars_expr_suffix(expr::Ptr{polars_expr_t}, name::Ptr{UInt8}, len::Csize_t, out::Ptr{Ptr{polars_expr_t}})::Ptr{polars_error_t}
+end
+
+function polars_expr_cast(expr, dtype)
+    @ccall libpolars.polars_expr_cast(expr::Ptr{polars_expr_t}, dtype::polars_value_type_t)::Ptr{polars_expr_t}
 end
 
 function polars_expr_keep_name(expr)
@@ -449,6 +534,18 @@ function polars_expr_str_contains_literal(a, b)
     @ccall libpolars.polars_expr_str_contains_literal(a::Ptr{polars_expr_t}, b::Ptr{polars_expr_t})::Ptr{polars_expr_t}
 end
 
+function polars_expr_struct_field_by_name(a, name, len)
+    @ccall libpolars.polars_expr_struct_field_by_name(a::Ptr{polars_expr_t}, name::Ptr{UInt8}, len::Csize_t)::Ptr{polars_expr_t}
+end
+
+function polars_expr_struct_field_by_index(a, fieldidx)
+    @ccall libpolars.polars_expr_struct_field_by_index(a::Ptr{polars_expr_t}, fieldidx::Int64)::Ptr{polars_expr_t}
+end
+
+function polars_expr_struct_rename_fields(a, names, lens, num_names)
+    @ccall libpolars.polars_expr_struct_rename_fields(a::Ptr{polars_expr_t}, names::Ptr{Ptr{UInt8}}, lens::Ptr{Csize_t}, num_names::Csize_t)::Ptr{polars_expr_t}
+end
+
 function polars_series_new(name, namelen, values, valueslen, out)
     @ccall libpolars.polars_series_new(name::Ptr{UInt8}, namelen::Csize_t, values::Ptr{UInt32}, valueslen::Csize_t, out::Ptr{Ptr{polars_series_t}})::Ptr{polars_error_t}
 end
@@ -463,6 +560,23 @@ end
 
 function polars_series_length(series)
     @ccall libpolars.polars_series_length(series::Ptr{polars_series_t})::Csize_t
+end
+
+function polars_series_null_count(series)
+    @ccall libpolars.polars_series_null_count(series::Ptr{polars_series_t})::Csize_t
+end
+
+function polars_series_schema(series)
+    @ccall libpolars.polars_series_schema(series::Ptr{polars_series_t})::ArrowSchema
+end
+
+"""
+    polars_series_is_null(series, index)
+
+Returns whether or not the value at index `index` is null, return false if the index is out of bounds.
+"""
+function polars_series_is_null(series, index)
+    @ccall libpolars.polars_series_is_null(series::Ptr{polars_series_t}, index::Csize_t)::Bool
 end
 
 function polars_series_name(series, out)
@@ -578,6 +692,27 @@ function polars_value_list_get(value, out)
     @ccall libpolars.polars_value_list_get(value::Ptr{polars_value_t}, out::Ptr{Ptr{polars_series_t}})::Ptr{polars_error_t}
 end
 
+function polars_value_utf8_get(value, user, callback)
+    @ccall libpolars.polars_value_utf8_get(value::Ptr{polars_value_t}, user::Ptr{Cvoid}, callback::IOCallback)::Ptr{polars_error_t}
+end
+
+function polars_value_binary_get(value, user, callback)
+    @ccall libpolars.polars_value_binary_get(value::Ptr{polars_value_t}, user::Ptr{Cvoid}, callback::IOCallback)::Ptr{polars_error_t}
+end
+
+"""
+    polars_value_struct_get(value, fieldidx, out)
+
+Used to get value of of a Struct value fields.
+
+NOTE: The value producing the new value must outlive the value from the field.
+
+Safety: Values lifetimes must be valid and only support physical dtypes for now.
+"""
+function polars_value_struct_get(value, fieldidx, out)
+    @ccall libpolars.polars_value_struct_get(value::Ptr{polars_value_t}, fieldidx::Csize_t, out::Ptr{Ptr{polars_value_t}})::Ptr{polars_error_t}
+end
+
 """
     polars_value_list_type(value)
 
@@ -586,6 +721,12 @@ Returns the element type of the provided value which must be a list. The value t
 function polars_value_list_type(value)
     @ccall libpolars.polars_value_list_type(value::Ptr{polars_value_t})::polars_value_type_t
 end
+
+const ARROW_FLAG_DICTIONARY_ORDERED = 1
+
+const ARROW_FLAG_NULLABLE = 2
+
+const ARROW_FLAG_MAP_KEYS_SORTED = 4
 
 # exports
 const PREFIXES = ["polars_", "Polars"]

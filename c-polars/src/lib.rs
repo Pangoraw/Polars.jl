@@ -5,6 +5,11 @@ use std::ffi::c_void;
 use std::io::Write;
 
 use polars::prelude::*;
+use polars_core::utils::arrow::{
+    self,
+    array::StructArray,
+    ffi::{self, ArrowArray, ArrowSchema},
+};
 
 mod expr;
 mod series;
@@ -82,6 +87,70 @@ fn make_dataframe(df: DataFrame) -> *mut polars_dataframe_t {
 #[no_mangle]
 pub fn polars_dataframe_new() -> *mut polars_dataframe_t {
     make_dataframe(DataFrame::empty())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn polars_dataframe_size(
+    df: *mut polars_dataframe_t,
+    rows: *mut usize,
+    cols: *mut usize,
+) {
+    let df = &(*df).inner;
+    *rows = df.height();
+    *cols = df.width();
+}
+
+/// Creates a DataFrame from a series of ArrowArray and ArrowSchema compatible the arrow C-ABI.
+///
+/// # Safety
+/// The field array should be valid ArrowSchema according to the C Data Interface.
+/// The array array should be valid ArrowArray according to the C Data Interface,
+/// this means that the memory ownership is transferred in the created arrow::Array.
+/// Therefore, the caller should *not* free the underlying memories for this arrow as this
+/// will be done through the release field of the array.
+///
+/// Returns null if something went wrong.
+#[no_mangle]
+pub extern "C" fn polars_dataframe_new_from_carrow(
+    cfield: *const ArrowSchema,
+    carray: ArrowArray,
+) -> *mut polars_dataframe_t {
+    // Safety: the field ptr is expected to be a valid pointer to an ArrowSchema according to
+    // the C Data interface.
+    let Ok(field) = (unsafe { ffi::import_field_from_c(&*cfield) }) else {
+        return std::ptr::null_mut();
+    };
+
+    // Safety: carray will not be destroyed at the end of the function since import_array_from_c
+    // takes ownership of it. Therefore, it should be destroyed once the dataframe is destroyed
+    // using polars_dataframe_destroy.
+    let Ok(array) = (unsafe { ffi::import_array_from_c(carray, field.data_type.clone()) }) else {
+        return std::ptr::null_mut();
+    };
+
+    let Some(sarray) = array.as_any().downcast_ref::<StructArray>() else {
+        // caller is expected to provide a struct array (encoding +s) with field
+        // being the columns.
+        return std::ptr::null_mut();
+    };
+
+    let Ok(df) = DataFrame::try_from(sarray.clone()) else {
+        return std::ptr::null_mut();
+    };
+
+    make_dataframe(df)
+}
+
+/// Returns a ArrowSchema describing the dataframe's schema according to Arrow C Data interface.
+#[no_mangle]
+pub unsafe extern "C" fn polars_dataframe_schema(df: *mut polars_dataframe_t) -> ArrowSchema {
+    let schema = (*df).inner.schema().to_arrow();
+    let structfield = arrow::datatypes::Field::new(
+        "polars.dataframe",
+        arrow::datatypes::DataType::Struct(schema.fields),
+        false,
+    );
+    ffi::export_field_to_c(&structfield)
 }
 
 #[no_mangle]
@@ -269,6 +338,21 @@ pub unsafe extern "C" fn polars_lazy_frame_concat(
     *out = Box::into_raw(Box::new(polars_lazy_frame_t { inner: df }));
 
     std::ptr::null()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn polars_lazy_frame_with_columns(
+    df: *mut polars_lazy_frame_t,
+    exprs: *const *const polars_expr_t,
+    nexprs: usize,
+) {
+    let exprs: Vec<Expr> = std::slice::from_raw_parts(exprs, nexprs)
+        .iter()
+        .map(|expr| (**expr).inner.clone())
+        .collect();
+    let mut df = Box::from_raw(df);
+    df.inner = df.inner.with_columns(&exprs);
+    std::mem::forget(df);
 }
 
 #[no_mangle]

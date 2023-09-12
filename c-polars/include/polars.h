@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include "arrow.h"
 
 typedef enum polars_value_type_t {
   PolarsValueTypeNull,
@@ -19,6 +20,9 @@ typedef enum polars_value_type_t {
   PolarsValueTypeFloat32,
   PolarsValueTypeFloat64,
   PolarsValueTypeList,
+  PolarsValueTypeUtf8,
+  PolarsValueTypeStruct,
+  PolarsValueTypeBinary,
   PolarsValueTypeUnknown,
 } polars_value_type_t;
 
@@ -46,6 +50,32 @@ uintptr_t polars_version(const uint8_t **out);
 uintptr_t polars_error_message(const struct polars_error_t *err, const uint8_t **data);
 
 void polars_error_destroy(const struct polars_error_t *err);
+
+void polars_dataframe_size(struct polars_dataframe_t *df, uintptr_t *rows, uintptr_t *cols);
+
+/**
+ * Creates a DataFrame from a series of ArrowArray and ArrowSchema compatible the arrow C-ABI.
+ *
+ * # Safety
+ * The field array should be valid ArrowSchema according to the C Data Interface.
+ * The array array should be valid ArrowArray according to the C Data Interface,
+ * this means that the memory ownership is transferred in the created arrow::Array.
+ * Therefore, the caller should *not* free the underlying memories for this arrow as this
+ * will be done through the release field of the array.
+ *
+ * Returns null if something went wrong.
+ */
+struct polars_dataframe_t *polars_dataframe_new_from_carrow(const ArrowSchema *cfield,
+                                                            ArrowArray carray);
+
+/**
+ * Returns a ArrowSchema describing the dataframe's schema according to Arrow C Data interface.
+ */
+ArrowSchema polars_dataframe_schema(struct polars_dataframe_t *df);
+
+const struct polars_error_t *polars_dataframe_new_from_series(struct polars_series_t *const *series,
+                                                              uintptr_t nseries,
+                                                              struct polars_dataframe_t **out);
 
 void polars_dataframe_destroy(struct polars_dataframe_t *df);
 
@@ -80,6 +110,10 @@ void polars_lazy_frame_sort(struct polars_lazy_frame_t *df,
 const struct polars_error_t *polars_lazy_frame_concat(struct polars_lazy_frame_t *const *lfs,
                                                       uintptr_t n,
                                                       struct polars_lazy_frame_t **out);
+
+void polars_lazy_frame_with_columns(struct polars_lazy_frame_t *df,
+                                    const struct polars_expr_t *const *exprs,
+                                    uintptr_t nexprs);
 
 void polars_lazy_frame_select(struct polars_lazy_frame_t *df,
                               const struct polars_expr_t *const *exprs,
@@ -125,6 +159,10 @@ const struct polars_expr_t *polars_expr_literal_u32(uint32_t value);
 
 const struct polars_expr_t *polars_expr_literal_u64(uint64_t value);
 
+const struct polars_expr_t *polars_expr_literal_f32(float value);
+
+const struct polars_expr_t *polars_expr_literal_f64(double value);
+
 const struct polars_error_t *polars_expr_literal_utf8(const uint8_t *s,
                                                       uintptr_t len,
                                                       const struct polars_expr_t **out);
@@ -137,6 +175,19 @@ const struct polars_error_t *polars_expr_alias(const struct polars_expr_t *expr,
                                                const uint8_t *name,
                                                uintptr_t len,
                                                const struct polars_expr_t **out);
+
+const struct polars_error_t *polars_expr_prefix(const struct polars_expr_t *expr,
+                                                const uint8_t *name,
+                                                uintptr_t len,
+                                                const struct polars_expr_t **out);
+
+const struct polars_error_t *polars_expr_suffix(const struct polars_expr_t *expr,
+                                                const uint8_t *name,
+                                                uintptr_t len,
+                                                const struct polars_expr_t **out);
+
+const struct polars_expr_t *polars_expr_cast(const struct polars_expr_t *expr,
+                                             enum polars_value_type_t dtype);
 
 const struct polars_expr_t *polars_expr_keep_name(const struct polars_expr_t *expr);
 
@@ -295,6 +346,18 @@ const struct polars_expr_t *polars_expr_str_ends_with(const struct polars_expr_t
 const struct polars_expr_t *polars_expr_str_contains_literal(const struct polars_expr_t *a,
                                                              const struct polars_expr_t *b);
 
+const struct polars_expr_t *polars_expr_struct_field_by_name(const struct polars_expr_t *a,
+                                                             const uint8_t *name,
+                                                             uintptr_t len);
+
+const struct polars_expr_t *polars_expr_struct_field_by_index(const struct polars_expr_t *a,
+                                                              int64_t fieldidx);
+
+const struct polars_expr_t *polars_expr_struct_rename_fields(const struct polars_expr_t *a,
+                                                             const uint8_t *const *names,
+                                                             const uintptr_t *lens,
+                                                             uintptr_t num_names);
+
 const struct polars_error_t *polars_series_new(const uint8_t *name,
                                                uintptr_t namelen,
                                                const uint32_t *values,
@@ -306,6 +369,16 @@ void polars_series_destroy(struct polars_series_t *series);
 enum polars_value_type_t polars_series_type(struct polars_series_t *series);
 
 uintptr_t polars_series_length(struct polars_series_t *series);
+
+uintptr_t polars_series_null_count(struct polars_series_t *series);
+
+ArrowSchema polars_series_schema(struct polars_series_t *series);
+
+/**
+ * Returns whether or not the value at index `index` is null, return false if the index is out of
+ * bounds.
+ */
+bool polars_series_is_null(struct polars_series_t *series, uintptr_t index);
 
 uintptr_t polars_series_name(struct polars_series_t *series, const uint8_t **out);
 
@@ -386,6 +459,25 @@ const struct polars_error_t *polars_value_get_f64(struct polars_value_t *value, 
  */
 const struct polars_error_t *polars_value_list_get(struct polars_value_t *value,
                                                    struct polars_series_t **out);
+
+const struct polars_error_t *polars_value_utf8_get(struct polars_value_t *value,
+                                                   void *user,
+                                                   IOCallback callback);
+
+const struct polars_error_t *polars_value_binary_get(struct polars_value_t *value,
+                                                     void *user,
+                                                     IOCallback callback);
+
+/**
+ * Used to get value of of a Struct value fields.
+ *
+ * NOTE: The value producing the new value must outlive the value from the field.
+ *
+ * Safety: Values lifetimes must be valid and only support physical dtypes for now.
+ */
+const struct polars_error_t *polars_value_struct_get(struct polars_value_t *value,
+                                                     uintptr_t fieldidx,
+                                                     struct polars_value_t **out);
 
 /**
  * Returns the element type of the provided value which must be a list.

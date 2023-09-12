@@ -1,12 +1,39 @@
 module Polars
 
+import PrettyTables, Tables
+
+const MaybeMissing{T} = Union{T,Union{T,Missing}}
+const PhysicalDType = Union{Bool,Int8,Int16,Int32,Int64,UInt8,
+                            UInt16,UInt32,UInt64,Float32,Float64}
+
+nomissing(::Type{MaybeMissing{T}}) where {T} = T
+nomissing(::Type{T}) where {T} = T
+
+"Internal function to write back to an IO from rustland"
+function _write_callback(user, data, len)
+    try
+        n = unsafe_write(user isa IO ? user : user[], data, len)
+        Int(n)
+    catch
+        -1
+    end
+end
+
+
 include("./API.jl")
 
 using .API
 
+include("./arrow.jl")
 include("./expr.jl")
 include("./series.jl")
+include("./value.jl")
 
+"""
+    version()::VersionNumber
+
+Returns the rust Polars version with which the C-API was built.
+"""
 function version()
     out = Ref{Ptr{UInt8}}()
     len = polars_version(out)
@@ -26,10 +53,34 @@ end
 mutable struct DataFrame
     ptr::Ptr{polars_dataframe_t}
 
-    DataFrame(ptr) = finalizer(polars_dataframe_destroy, new(ptr))
+    DataFrame(ptr::Ptr{polars_dataframe_t}) =
+        finalizer(polars_dataframe_destroy, new(ptr))
+end
+
+"""
+    DataFrame(table)
+
+A wrapper around an immutable polars dataframe object.
+"""
+function DataFrame(table)
+    array, schema = Polars.arrowtable(table, "polars.dataframe")
+    try
+        df = API.polars_dataframe_new_from_carrow(schema, array)
+        DataFrame(df)
+    finally
+        release_schema!(schema)
+    end
+end
+
+function Base.size(df::DataFrame)
+    rows, cols = Ref{Csize_t}(), Ref{Csize_t}()
+    API.polars_dataframe_size(df, rows, cols)
+    (Int(rows[]), Int(cols[]))
 end
 
 Base.getindex(df::DataFrame, ss...) = [getindex(df, s) for s in ss] # this or select(df, ss...) ?
+Base.getindex(df::DataFrame, idx::Int) = Tables.getcolumn(df, idx)
+Base.getindex(df::DataFrame, s::String) = getindex(df, Symbol(s))
 function Base.getindex(df::DataFrame, s::Symbol)
     s = string(s)::String
     out = Ref{Ptr{polars_series_t}}()
@@ -49,11 +100,23 @@ end
 
 Base.unsafe_convert(::Type{Ptr{polars_lazy_frame_t}}, df::LazyFrame) = df.ptr
 
+"""
+    lazy(df::DataFrame)::LazyFrame
+
+Returns a lazy frame over the provided dataframe.
+
+See also [`collect`](@ref).
+"""
 function lazy(df)
     out = polars_dataframe_lazy(df)
     LazyFrame(out)
 end
 
+"""
+    collect(lf::LazyFrame)::DataFrame
+
+Materializes the lazy frame as a DataFrame.
+"""
 function Base.collect(df::LazyFrame)
     out = Ref{Ptr{polars_dataframe_t}}()
     err = polars_lazy_frame_collect(df, out)
@@ -73,15 +136,6 @@ function read_parquet(path)
     DataFrame(out[])
 end
 
-function _write_callback(user, data, len)
-    try
-        n = unsafe_write(user isa IO ? user : user[], data, len)
-        Int(n)
-    catch
-        -1
-    end
-end
-
 """
     write_parquet(io::IO, df::DataFrame)
     write_parquet(path::String, df::DataFrame)
@@ -97,14 +151,27 @@ function write_parquet(io::IO, df::DataFrame)
 end
 write_parquet(p::String, df::DataFrame) = open(io -> write_parquet(io, df), p, "w")
 
+Base.summary(df::DataFrame) = join(size(df), '×') * " DataFrame"
+
 function Base.show(io::IO, df::DataFrame)
-    callback = @cfunction(_write_callback, Cssize_t, (Any, Ptr{Cchar}, Cuint))
-    ref = Ref(io)
-    polars_dataframe_show(df, ref, callback)
+    # Copied from the nice PrettyTables setup in DataFrames.jl
+    # https://github.com/JuliaData/DataFrames.jl/blob/e341cc7873a08977cc8e4d56f28303883582c920/src/abstractdataframe/show.jl#L253-L279
+    # Still needs some tuning/options
+    PrettyTables.pretty_table(io, df;
+        title=Base.summary(df),
+        hlines=[:header],
+        compact_printing=true,
+        crop=:both,
+        maximum_columns_width=32,
+        vlines=Int[],
+        # show_row_number=true,
+        header_alignment=:l,
+        row_number_alignment=:r,
+    )
 end
 
-select!(df::LazyFrame, exprs...) = select!(df, collect(exprs)::Vector)
-function select!(df::LazyFrame, exprs::Vector)
+_select!(df::LazyFrame, exprs...) = _select!(df, collect(exprs)::Vector)
+function _select!(df::LazyFrame, exprs::Vector)
     exprs = map(ex -> ex isa String ? col(ex) : ex, exprs)
     exprs = convert(Vector{Expr}, exprs)
     @GC.preserve exprs begin
@@ -120,8 +187,8 @@ end
 
 Select a fixed set of expressions from the provided frames.
 """
-select(df::LazyFrame, exprs...) = select!(copy(df), exprs...)
-select(df::DataFrame, exprs...) = select!(lazy(df), exprs...) |> collect
+select(df::LazyFrame, exprs...) = _select!(clone(df), exprs...)
+select(df::DataFrame, exprs...) = _select!(lazy(df), exprs...) |> collect
 
 """
     with_columns(lf::LazyFrame, exprs...)::LazyFrame
@@ -129,9 +196,39 @@ select(df::DataFrame, exprs...) = select!(lazy(df), exprs...) |> collect
 
 Select a fixed set of expressions from the provided frames and
 also returns the existing columns.
+
+```julia-repl
+julia> df = DataFrame((; x=[1,2,3]))
+3×1 DataFrame
+ x      
+ Int64? 
+────────
+      1
+      2
+      3
+
+julia> with_columns(df, col("x") * 2 |> alias("2x"))
+3×2 DataFrame
+ x       2x     
+ Int64?  Int64? 
+────────────────
+      1       2
+      2       4
+      3       6
+```
 """
-with_columns(df, exprs::Vector) = select(df, [col("*"), exprs...])
-with_columns(df, exprs...) = select(df, col("*"), exprs...)
+with_columns(df::LazyFrame, exprs...) = _with_columns!(clone(df), collect(exprs)::Vector)
+with_columns(df::DataFrame, exprs...) = _with_columns!(lazy(df), collect(exprs)::Vector) |> collect
+
+function _with_columns!(df::LazyFrame, exprs::Vector)
+    exprs = map(ex -> ex isa String ? col(ex) : ex, exprs)
+    exprs = convert(Vector{Expr}, exprs)
+    @GC.preserve exprs begin
+        exprs_ptrs = Ptr{polars_expr_t}[expr.ptr for expr in exprs]
+        polars_lazy_frame_with_columns(df, exprs_ptrs, length(exprs_ptrs))
+    end
+    df
+end
 
 """
     fetch(lf::LazyFrame, n)::DataFrame
@@ -146,7 +243,7 @@ function Base.fetch(df::LazyFrame, n)
     DataFrame(out[])
 end
 
-function Base.filter!(df::LazyFrame, expr)
+function _filter!(df::LazyFrame, expr)
     polars_lazy_frame_filter(df, expr)
     df
 end
@@ -157,10 +254,10 @@ end
 
 Filters the rows of the provided frames based on the provided expression.
 """
-Base.filter(df::LazyFrame, expr) = filter!(copy(df), expr)
-Base.filter(df::DataFrame, expr) = filter!(lazy(df), expr) |> collect
+Base.filter(df::LazyFrame, expr) = _filter!(clone(df), expr)
+Base.filter(df::DataFrame, expr) = _filter!(lazy(df), expr) |> collect
 
-function Base.copy(df::LazyFrame)
+function clone(df::LazyFrame)
     out = polars_lazy_frame_clone(df)
     LazyFrame(out)
 end
@@ -185,6 +282,12 @@ function innerjoin(a::LazyFrame, b::LazyFrame, exprs_a::Vector, exprs_b::Vector)
     LazyFrame(out)
 end
 
+"""
+    LazyGroupBy()
+
+A groupby over a [`LazyFrame`] whose values can be aggregated using the
+[`agg`](@ref) function.
+"""
 mutable struct LazyGroupBy
     ptr::Ptr{polars_lazy_group_by_t}
 
@@ -194,6 +297,12 @@ end
 
 Base.unsafe_convert(::Type{Ptr{polars_lazy_group_by_t}}, gb::LazyGroupBy) = gb.ptr
 
+"""
+    groupby(df::LazyFrame, exprs...)
+
+Returns a lazy groupby object over the provided [`LazyFrame`](@ref).
+The values for the groupby can be aggregated using the [`agg`](@ref) function.
+"""
 groupby(df::LazyFrame, exprs...) = groupby(df, collect(exprs)::Vector)
 function groupby(df::LazyFrame, exprs::Vector)
     exprs = map(ex -> ex isa String ? col(ex) : ex, exprs)
@@ -205,6 +314,11 @@ function groupby(df::LazyFrame, exprs::Vector)
     LazyGroupBy(out)
 end
 
+"""
+    agg(gb, exprs...)::LazyFrame
+
+Aggregates the value over the groupby object and return a resulting [`LazyFrame`](@ref).
+"""
 agg(gb::LazyGroupBy, exprs...) = agg(gb, collect(exprs)::Vector)
 function agg(gb::LazyGroupBy, exprs::Vector)
     exprs = map(ex -> ex isa String ? col(ex) : ex, exprs)
@@ -216,39 +330,29 @@ function agg(gb::LazyGroupBy, exprs::Vector)
     LazyFrame(out)
 end
 
-function julia_wrapper(t)
-    if t == PolarsValueTypeNull
-        Missing
-    elseif t == PolarsValueTypeBoolean
-        Bool
-    elseif t == PolarsValueTypeUInt8
-        UInt8
-    elseif t == PolarsValueTypeUInt16
-        UInt16
-    elseif t == PolarsValueTypeUInt32
-        UInt32
-    elseif t == PolarsValueTypeUInt64
-        UInt64
-    elseif t == PolarsValueTypeInt8
-        Int8
-    elseif t == PolarsValueTypeInt16
-        Int16
-    elseif t == PolarsValueTypeInt32
-        Int32
-    elseif t == PolarsValueTypeInt64
-        Int64
-    elseif t == PolarsValueTypeFloat32
-        Float32
-    elseif t == PolarsValueTypeFloat64
-        Float64
-    elseif t == PolarsValueTypeUnknown
-        Nothing
-    end
+export Series, DataFrame,
+       select, with_columns, fetch,
+       read_parquet, write_parquet,
+       lazy, innerjoin, groupby, agg
+
+## Tables.jl interface
+
+import Tables: schema
+
+function schema(df::DataFrame)
+    schema = API.polars_dataframe_schema(df)
+    load_dataframe_schema(schema)
 end
 
-export select, with_columns, fetch,
-    read_parquet, write_parquet,
-    lazy, Lists, Strings,
-    innerjoin, groupby, agg
+Tables.istable(::DataFrame) = true
 
-end
+Tables.columnaccess(::DataFrame) = true
+Tables.rowaccess(::DataFrame) = true # enables Pluto.jl viewer
+
+Tables.columns(df::DataFrame) = df
+
+Tables.columnnames(df::DataFrame) = schema(df).names
+Tables.getcolumn(df::DataFrame, col::Symbol) = getindex(df, col)
+Tables.getcolumn(df::DataFrame, idx::Int) = Tables.getcolumn(df, Tables.columnnames(df)[idx])
+
+end # module Polars

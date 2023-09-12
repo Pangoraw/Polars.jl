@@ -1,3 +1,5 @@
+use polars_core::utils::arrow::array::Int64Array;
+
 use crate::{series::make_series, *};
 
 #[repr(C)]
@@ -16,6 +18,8 @@ pub enum polars_value_type_t {
     PolarsValueTypeFloat64,
     PolarsValueTypeList,
     PolarsValueTypeUtf8,
+    PolarsValueTypeStruct,
+    PolarsValueTypeBinary,
     PolarsValueTypeUnknown,
 }
 
@@ -37,7 +41,32 @@ impl polars_value_type_t {
             DataType::Float64 => PolarsValueTypeFloat64,
             DataType::List(_) => PolarsValueTypeList,
             DataType::Utf8 => PolarsValueTypeUtf8,
+            DataType::Struct(_) => PolarsValueTypeStruct,
+            DataType::Binary => PolarsValueTypeBinary,
+            DataType::Unknown => PolarsValueTypeUnknown,
             _ => PolarsValueTypeUnknown,
+        }
+    }
+
+    pub(crate) fn to_dtype(&self) -> DataType {
+        use polars_value_type_t::*;
+        match self {
+            PolarsValueTypeNull => DataType::Null,
+            PolarsValueTypeBoolean => DataType::Boolean,
+            PolarsValueTypeUInt8 => DataType::UInt8,
+            PolarsValueTypeUInt16 => DataType::UInt16,
+            PolarsValueTypeUInt32 => DataType::UInt32,
+            PolarsValueTypeUInt64 => DataType::UInt64,
+            PolarsValueTypeInt8 => DataType::Int8,
+            PolarsValueTypeInt16 => DataType::Int16,
+            PolarsValueTypeInt32 => DataType::Int32,
+            PolarsValueTypeInt64 => DataType::Int64,
+            PolarsValueTypeFloat32 => DataType::Float32,
+            PolarsValueTypeFloat64 => DataType::Float64,
+            PolarsValueTypeUtf8 => DataType::Utf8,
+            PolarsValueTypeBinary => DataType::Binary,
+            PolarsValueTypeUnknown => DataType::Unknown,
+            _ => DataType::Unknown, // Cannot map structs and lists
         }
     }
 }
@@ -108,6 +137,58 @@ pub unsafe extern "C" fn polars_value_utf8_get(
         return std::ptr::null();
     };
     make_error(err)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn polars_value_binary_get(
+    value: *mut polars_value_t,
+    user: *mut c_void,
+    callback: IOCallback,
+) -> *const polars_error_t {
+    let mut w = UserIOCallback(callback, user);
+    let Err(err) = (match (*value).inner {
+        AnyValue::Binary(s) => w.write(s),
+        _ => return make_error("value is not of type utf8"),
+    }) else {
+        return std::ptr::null();
+    };
+    make_error(err)
+}
+
+/// Used to get value of of a Struct value fields.
+///
+/// NOTE: The value producing the new value must outlive the value from the field.
+///
+/// Safety: Values lifetimes must be valid and only support physical dtypes for now.
+#[no_mangle]
+pub unsafe extern "C" fn polars_value_struct_get<'a: 'b, 'b>(
+    value: *mut polars_value_t<'a>,
+    fieldidx: usize,
+    out: *mut *mut polars_value_t<'b>,
+) -> *const polars_error_t {
+    let AnyValue::Struct(value_index, sarray, fields) = (*value).inner else {
+        return make_error("invalid type for value");
+    };
+
+    let Some(series) = sarray.values().get(fieldidx) else {
+        return make_error(format!("invalid field index {fieldidx}"));
+    };
+
+    let field = &fields[fieldidx];
+
+    let value = match field.data_type() {
+        DataType::Int64 => {
+            let array = series.as_any().downcast_ref::<Int64Array>().unwrap();
+            array.get(value_index).map(|val| AnyValue::Int64(val))
+        }
+        _ => unimplemented!("{:?}", field.data_type()),
+    };
+
+    let value = value.unwrap_or(AnyValue::Null);
+
+    *out = Box::into_raw(Box::new(polars_value_t { inner: value }));
+
+    std::ptr::null()
 }
 
 /// Returns the element type of the provided value which must be a list.

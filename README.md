@@ -16,13 +16,13 @@ julia> customers_nations = innerjoin(customers, nations, col("nation_key"));
 julia> gb = groupby(customers_nations, [col("nation_key")]);
 
 julia> gbagg = agg(gb,
-           alias(col("name"), "customer_names"),
+           col("name") |> alias("customer_names"),
            col("name_right") |> first |> Strings.lowercase,
-           mean(col("acctbal"))
+           col("acctbal") |> mean,
        );
 
 julia> select(gbagg,
-           alias(col("name_right"), "nation_name"),
+           col("name_right") |> alias("nation_name"),
            col("customer_names"),
            col("acctbal"),
         ) |> collect
@@ -46,11 +46,12 @@ shape: (25, 3)
 
 ## Polars C-API
 
-To build the polars c-api, run the following commands (rustc 1.73.0-nightly is currently needed):
+To build the polars c-api, run the following commands:
 
 ```
 cd c-polars
 cargo build # --release
 ```
 
+This is mostly helpful for development to test C-API changes with the Julia version, do not forget to set `Polars.API.libpolars` to the right path by uncommenting the line in `src/API.jl`.
 A header file is also included if one wants to use the API from C directly.

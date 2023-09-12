@@ -1,3 +1,10 @@
+"""
+    Expr
+
+Internal structure representing a value in a Polars expression.
+This should not be constructed directly but rather use helper functions
+such as [`col`](@ref).
+"""
 mutable struct Expr
     ptr::Ptr{polars_expr_t}
 
@@ -10,6 +17,8 @@ Base.promote_rule(::Type{Expr}, ::Type{UInt32}) = Expr
 Base.promote_rule(::Type{Expr}, ::Type{UInt64}) = Expr
 Base.promote_rule(::Type{Expr}, ::Type{Int32}) = Expr
 Base.promote_rule(::Type{Expr}, ::Type{Int64}) = Expr
+Base.promote_rule(::Type{Expr}, ::Type{Float32}) = Expr
+Base.promote_rule(::Type{Expr}, ::Type{Float64}) = Expr
 
 # TODO: improve this:
 Base.convert(::Type{Expr}, p::Pair{Expr,Symbol}) = alias(p[1], string(p[2])::String)
@@ -38,6 +47,14 @@ function Base.convert(::Type{Expr}, v::Bool)
     out = polars_expr_literal_bool(v)
     Expr(out)
 end
+function Base.convert(::Type{Expr}, f::Float32)
+    out = polars_expr_literal_f32(f)
+    Expr(out)
+end
+function Base.convert(::Type{Expr}, f::Float64)
+    out = polars_expr_literal_f64(f)
+    Expr(out)
+end
 function Base.convert(::Type{Expr}, ::Nothing)
     out = polars_expr_literal_null()
     Expr(out)
@@ -63,6 +80,18 @@ Base.:/(a::Expr, b) = div(promote(a, b)...)
 Base.isequal(a::Expr, b) = eq(promote(a, b)...)
 Base.isless(a::Expr, b) = Base.lt(promote(a, b)...)
 
+Base.:&(a::Expr, b) = and(promote(a, b)...)
+Base.:|(a::Expr, b) = or(promote(a, b)...)
+
+Base.:&(a::Expr, b::Expr) = and(a, b)
+Base.:|(a::Expr, b::Expr) = or(a, b)
+
+"""
+    col(name::String)::Polars.Expr
+
+Returns an expression referencing a column in a dataframe. The special
+column name `"*"` will select all columns in the dataframe.
+"""
 function col(name)
     expr = Ref{Ptr{polars_expr_t}}()
     err = polars_expr_col(name, length(name), expr)
@@ -70,12 +99,89 @@ function col(name)
     return Expr(expr[])
 end
 
+"""
+    alias(expr::Polars.Expr, name::String)::Polars.Expr
+    alias(alias::String)::Base.Fix2{typeof(alias), String}
+
+Renames the result of this expression to a new name.
+"""
 function alias(expr, alias)
     out = Ref{Ptr{polars_expr_t}}()
     err = polars_expr_alias(expr, alias, length(alias), out)
     polars_error(err)
     return Expr(out[])
 end
+alias(new_name) = Base.Fix2(alias, new_name)
+
+"""
+    prefix(expr::Polars.Expr, prefix::String)::Polars.Expr
+    prefix(prefix::String)::Base.Fix2{typeof(prefix), String}
+
+Adds a prefix to the name of the resulting expression.
+"""
+function prefix(expr, pref)
+    out = Ref{Ptr{polars_expr_t}}()
+    err = polars_expr_prefix(expr, pref, length(pref), out)
+    polars_error(err)
+    return Expr(out[])
+end
+prefix(pref) = Base.Fix2(prefix, pref)
+
+"""
+    suffix(expr::Polars.Expr, suffix::String)::Polars.Expr
+    suffix(suffix::String)::Base.Fix2{typeof(suffix), String}
+
+Adds a suffix to the name of the resulting expression.
+"""
+function suffix(expr, suf)
+    out = Ref{Ptr{polars_expr_t}}()
+    err = polars_expr_suffix(expr, suf, length(suf), out)
+    polars_error(err)
+    return Expr(out[])
+end
+suffix(suf) = Base.Fix2(suffix, suf)
+
+"""
+    cast(expr::Polars.Expr, dtype::Type)::Polars.Expr
+    cast(dtype::Type)::Base.Fix2{typeof(cast), ::Type}
+
+Casts the series represented by the expression with provided the datatype.
+"""
+function cast(expr, dtype)
+    value_type = if dtype == Missing
+        PolarsValueTypeNull
+    elseif dtype == Bool
+        PolarsValueTypeBoolean
+    elseif dtype == UInt8
+        PolarsValueTypeUInt8
+    elseif dtype == UInt16
+        PolarsValueTypeUInt16
+    elseif dtype == UInt32
+        PolarsValueTypeUInt32
+    elseif dtype == UInt64
+        PolarsValueTypeUInt64
+    elseif dtype == Int8
+        PolarsValueTypeInt8
+    elseif dtype == Int16
+        PolarsValueTypeInt16
+    elseif dtype == Int32
+        PolarsValueTypeInt32
+    elseif dtype == Int64
+        PolarsValueTypeInt64
+    elseif dtype == Float32
+        PolarsValueTypeFloat32
+    elseif dtype == Float64
+        PolarsValueTypeFloat64
+    elseif dtype == String
+        PolarsValueTypeUtf8
+    else
+        error("could not cast to type $dtype")
+    end
+
+    casted = API.polars_expr_cast(expr, value_type)
+    Expr(casted)
+end
+cast(dtype) = Base.Fix2(cast, dtype)
 
 macro generate_expr_fns(ex)
     @assert ex.head === :block
@@ -106,6 +212,18 @@ macro generate_expr_fns(ex)
         push!(out.args, Base.Expr(:function, sig, body))
         # Export Expr symbols
         if fname isa Symbol # && __module__ != Polars
+            namespace = string(first(last(call.args).args))
+            namespace_type = namespace == "Expr" ? "enum" : "struct"
+            rust_doc_url = "https://docs.rs/polars/latest/polars/prelude/$(namespace_type).$(namespace).html#method.$fname"
+            string_sig = replace(string(sig), "Expr" => "Polars.Expr")
+            docstring = """
+                $(string_sig)::Polars.Expr
+
+            Refer to [the polars documentation]($rust_doc_url).
+            """
+            push!(out.args, quote
+                Docs.@doc $docstring $(QuoteNode(fname))
+            end)
             push!(out.args, :(export $fname))
         end
     end
@@ -171,46 +289,92 @@ end
 end
 
 module Lists
-    using ..Polars: @generate_expr_fns, API, polars_expr_t, Expr
+using ..Polars: @generate_expr_fns, API, polars_expr_t, Expr
 
-    @generate_expr_fns begin
-        gen_impl_expr_list!(polars_expr_list_lengths, ListNameSpace::lengths);
-        gen_impl_expr_list!(polars_expr_list_max, ListNameSpace::max);
-        gen_impl_expr_list!(polars_expr_list_min, ListNameSpace::min);
-        gen_impl_expr_list!(polars_expr_list_arg_max, ListNameSpace::arg_max);
-        gen_impl_expr_list!(polars_expr_list_arg_min, ListNameSpace::arg_min);
-        gen_impl_expr_list!(polars_expr_list_sum, ListNameSpace::sum);
-        gen_impl_expr_list!(polars_expr_list_mean, ListNameSpace::mean);
-        gen_impl_expr_list!(polars_expr_list_reverse, ListNameSpace::reverse);
-        gen_impl_expr_list!(polars_expr_list_unique, ListNameSpace::unique);
-        gen_impl_expr_list!(polars_expr_list_unique_stable, ListNameSpace::unique_stable);
-        gen_impl_expr_list!(polars_expr_list_first, ListNameSpace::first);
-        gen_impl_expr_list!(polars_expr_list_last, ListNameSpace::last);
+@generate_expr_fns begin
+    gen_impl_expr_list!(polars_expr_list_lengths, ListNameSpace::lengths)
+    gen_impl_expr_list!(polars_expr_list_max, ListNameSpace::max)
+    gen_impl_expr_list!(polars_expr_list_min, ListNameSpace::min)
+    gen_impl_expr_list!(polars_expr_list_arg_max, ListNameSpace::arg_max)
+    gen_impl_expr_list!(polars_expr_list_arg_min, ListNameSpace::arg_min)
+    gen_impl_expr_list!(polars_expr_list_sum, ListNameSpace::sum)
+    gen_impl_expr_list!(polars_expr_list_mean, ListNameSpace::mean)
+    gen_impl_expr_list!(polars_expr_list_reverse, ListNameSpace::reverse)
+    gen_impl_expr_list!(polars_expr_list_unique, ListNameSpace::unique)
+    gen_impl_expr_list!(polars_expr_list_unique_stable, ListNameSpace::unique_stable)
+    gen_impl_expr_list!(polars_expr_list_first, ListNameSpace::first)
+    gen_impl_expr_list!(polars_expr_list_last, ListNameSpace::last)
 
-        gen_impl_expr_binary_list!(polars_expr_list_get, ListNameSpace::get);
-        gen_impl_expr_binary_list!(polars_expr_list_head, ListNameSpace::head);
-        gen_impl_expr_binary_list!(polars_expr_list_contains, ListNameSpace::contains);
-    end
+    gen_impl_expr_binary_list!(polars_expr_list_get, ListNameSpace::get)
+    gen_impl_expr_binary_list!(polars_expr_list_head, ListNameSpace::head)
+    gen_impl_expr_binary_list!(polars_expr_list_contains, ListNameSpace::contains)
 end
+end # module Lists
 
 module Strings
-    using ..Polars: @generate_expr_fns, API, polars_expr_t, Expr
+using ..Polars: @generate_expr_fns, API, polars_expr_t, Expr
 
-    @generate_expr_fns begin
-        gen_impl_expr_str!(polars_expr_str_to_uppercase, StringNameSpace::uppercase);
-        gen_impl_expr_str!(polars_expr_str_to_lowercase, StringNameSpace::lowercase);
-        gen_impl_expr_str!(polars_expr_str_to_titlecase, StringNameSpace::titlecase);
-        gen_impl_expr_str!(polars_expr_str_n_chars, StringNameSpace::n_chars);
-        gen_impl_expr_str!(polars_expr_str_lengths, StringNameSpace::lengths);
-        gen_impl_expr_str!(polars_expr_str_explode, StringNameSpace::explode);
+@generate_expr_fns begin
+    gen_impl_expr_str!(polars_expr_str_to_uppercase, StringNameSpace::uppercase)
+    gen_impl_expr_str!(polars_expr_str_to_lowercase, StringNameSpace::lowercase)
+    gen_impl_expr_str!(polars_expr_str_to_titlecase, StringNameSpace::titlecase)
+    gen_impl_expr_str!(polars_expr_str_n_chars, StringNameSpace::n_chars)
+    gen_impl_expr_str!(polars_expr_str_lengths, StringNameSpace::lengths)
+    gen_impl_expr_str!(polars_expr_str_explode, StringNameSpace::explode)
 
-        gen_impl_expr_binary_str!(polars_expr_str_starts_with, StringNameSpace::starts_with);
-        gen_impl_expr_binary_str!(polars_expr_str_ends_with, StringNameSpace::ends_with);
-        gen_impl_expr_binary_str!(
-            polars_expr_str_contains_literal,
-            StringNameSpace::contains_literal
-        );
-    end
+    gen_impl_expr_binary_str!(polars_expr_str_starts_with, StringNameSpace::starts_with)
+    gen_impl_expr_binary_str!(polars_expr_str_ends_with, StringNameSpace::ends_with)
+    gen_impl_expr_binary_str!(
+        polars_expr_str_contains_literal,
+        StringNameSpace::contains_literal
+    )
 end
+end # module Strings
 
-export col, alias
+module Structs
+using ..Polars: Expr, API
+
+"""
+    field_by_name(expr::Polars.Expr, name::String)::Polars.Expr
+    field_by_name(name::String)::Base.Fix2{typeof(field_by_name), String}
+
+Returns a new series corresponding to values of the selected field.
+"""
+function field_by_name(expr, name)
+    field = API.polars_expr_struct_field_by_name(expr, name, length(name))
+    Expr(field)
+end
+field_by_name(name) = Base.Fix2(field_by_name, name)
+
+"""
+    field_by_index(expr::Polars.Expr, index::Integer)::Polars.Expr
+    field_by_index(index::Integer)::Base.Fix2{typeof(field_by_index), Integer}
+
+Returns a new series corresponding to values of the selected field.
+"""
+function field_by_index(expr, fieldidx)
+    field = API.polars_expr_struct_field_by_index(expr, fieldidx)
+    Expr(field)
+end
+field_by_index(fieldidx) = Base.Fix2(field_by_index, fieldidx)
+
+"""
+    rename_fields(expr::Polars.Expr, new_names::Vector{String})::Polars.Expr
+    rename_fields(new_names::Vector{String})::Base.Fix2{typeof(rename_fields), Vector{String}}
+
+Renames the fields of the struct series with the provided new names.
+"""
+function rename_fields(expr, new_names)
+    new_names = convert(Vector{String}, new_names)
+    new_struct = API.polars_expr_struct_rename_fields(expr, new_names, length.(new_names), length(new_names))
+    @assert new_struct != C_NULL "failed to rename fields"
+    Expr(new_struct)
+end
+rename_fields(new_names) = Base.Fix2(rename_fields, new_names)
+
+export field_by_name, field_by_index, rename_fields
+
+end # module Structs
+
+export col, alias, prefix, suffix, cast,
+       Lists, Strings, Structs
