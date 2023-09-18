@@ -25,6 +25,13 @@ mutable struct Series{T} <: AbstractVector{T}
     end
 end
 
+function Series(name, values)
+    name = Symbol(name)
+    table = NamedTuple((name => values,))
+    df = DataFrame(table)
+    df[name]
+end
+
 Base.unsafe_convert(::Type{Ptr{polars_series_t}}, series::Series) = series.ptr
 
 Base.size(series::Series) = (series.length,)
@@ -63,15 +70,6 @@ function Base.getindex(series::Series{MT}, index) where {MT<:Union{MaybeMissing{
 
     load_value(value_at_index)
 end
-
-# function Series(name, values)
-#     ptr = Ref{Ptr{polars_series_t}}()
-# 
-#     err = polars_series_new(name, length(name), values, length(values), ptr)
-#     polars_error(err)
-# 
-#     Series{UInt32}(ptr[])
-# end
 
 """
     name(series::Series)::String

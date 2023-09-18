@@ -56,3 +56,9 @@ end
 
     @test df[:tobuy] == ["CHEESE 🧀"]
 end
+
+@testset "Series" begin
+    values = [1,2,3,4,5]
+    s = Series(:values, values)
+    @test sum(values) == sum(s)
+end

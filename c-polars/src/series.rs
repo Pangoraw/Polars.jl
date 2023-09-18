@@ -1,24 +1,5 @@
 use crate::{value::polars_value_type_t, *};
 
-#[no_mangle]
-pub unsafe extern "C" fn polars_series_new(
-    name: *const u8,
-    namelen: usize,
-    values: *const u32,
-    valueslen: usize,
-    out: *mut *mut polars_series_t,
-) -> *const polars_error_t {
-    let name = match std::str::from_utf8(std::slice::from_raw_parts(name, namelen)) {
-        Ok(name) => name,
-        Err(err) => {
-            return make_error(err);
-        }
-    };
-    let series = Series::new(name, std::slice::from_raw_parts(values, valueslen));
-    *out = Box::into_raw(Box::new(polars_series_t { inner: series }));
-    std::ptr::null()
-}
-
 pub(crate) fn make_series(series: Series) -> *mut polars_series_t {
     Box::into_raw(Box::new(polars_series_t { inner: series }))
 }

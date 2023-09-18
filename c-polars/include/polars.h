@@ -360,12 +360,6 @@ const struct polars_expr_t *polars_expr_struct_rename_fields(const struct polars
                                                              const uintptr_t *lens,
                                                              uintptr_t num_names);
 
-const struct polars_error_t *polars_series_new(const uint8_t *name,
-                                               uintptr_t namelen,
-                                               const uint32_t *values,
-                                               uintptr_t valueslen,
-                                               struct polars_series_t **out);
-
 void polars_series_destroy(struct polars_series_t *series);
 
 enum polars_value_type_t polars_series_type(struct polars_series_t *series);

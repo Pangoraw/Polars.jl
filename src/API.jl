@@ -550,10 +550,6 @@ function polars_expr_struct_rename_fields(a, names, lens, num_names)
     @ccall libpolars.polars_expr_struct_rename_fields(a::Ptr{polars_expr_t}, names::Ptr{Ptr{UInt8}}, lens::Ptr{Csize_t}, num_names::Csize_t)::Ptr{polars_expr_t}
 end
 
-function polars_series_new(name, namelen, values, valueslen, out)
-    @ccall libpolars.polars_series_new(name::Ptr{UInt8}, namelen::Csize_t, values::Ptr{UInt32}, valueslen::Csize_t, out::Ptr{Ptr{polars_series_t}})::Ptr{polars_error_t}
-end
-
 function polars_series_destroy(series)
     @ccall libpolars.polars_series_destroy(series::Ptr{polars_series_t})::Cvoid
 end

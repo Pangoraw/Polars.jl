@@ -422,6 +422,3 @@ function arrowtable(table, table_name)
 
     array, schema
 end
-
-
-
