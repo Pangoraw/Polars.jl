@@ -42,8 +42,9 @@ Dataframes can be constructed from objects implementings the [Tables.jl](https:/
 
 # ╔═╡ 0841cf66-c999-43af-84a8-5a4abfde68ba
 DataFrame((;
-	price = [1, 2, 3],
-	quantity  = [1.2, 2.3, 4.5],
+	quantity = [1,         2,          missing      ],
+	price =    [1.2,       2.3,        4.5          ],
+	items =    ["eggs 🥚", "cheese 🧀", "tomatoes 🍅"],
 ))
 
 # ╔═╡ 82f16419-11de-4055-8796-cc36aece3f8a
@@ -85,6 +86,7 @@ let df = DataFrame((; x = [1,2,3]))
 
 	# Manipulate lazy_frame
 	lazy_frame = select(lazy_frame, col("x") * 2)
+	lazy_frame = filter(lazy_frame, col("x") > 2.5)
 
 	# Collect the resulting lazy frame
 	collect(lazy_frame)
@@ -250,8 +252,14 @@ Binding(Polars, :with_columns)
 # ╔═╡ 10848dd7-f82d-49bd-aa8e-3524b8dc35d6
 Binding(Polars, :filter, Tuple{Polars.LazyFrame, Polars.Expr})
 
+# ╔═╡ ca6a03f8-0b5a-47d8-b22f-16fbbd66c0fe
+Binding(Polars, :sort)
+
 # ╔═╡ 24fe0edd-eae2-4051-981f-e1951579c9e3
 Binding(Polars, :keep_name)
+
+# ╔═╡ b90c70c6-19e2-46f7-83b7-1145eaf2c7b9
+Binding(Polars, :lit)
 
 # ╔═╡ 33a72173-b972-4434-b5e7-55411acba353
 Binding(Polars, :cast)
@@ -327,6 +335,7 @@ html"""
 # ╟─659172c1-59b2-4176-97bc-263a6cc19f0a
 # ╟─6e3cfe39-5050-4c0c-af80-7c5e1064a07e
 # ╟─94d7f868-cf5b-4cb8-ba10-55cd97724586
+# ╟─ca6a03f8-0b5a-47d8-b22f-16fbbd66c0fe
 # ╟─6703a1c7-1e6d-4bf7-b014-f71b1404225f
 # ╠═2dfbdb6a-8057-4610-af28-a808d664daf9
 # ╟─f0be17b6-80a1-454a-a1db-e2af2da30139
@@ -334,6 +343,7 @@ html"""
 # ╟─a67a0544-a1c5-4218-a80d-a0eb5a5ce92c
 # ╟─a4cd8ed5-d8e8-4907-ab33-176f906d1e3b
 # ╟─24fe0edd-eae2-4051-981f-e1951579c9e3
+# ╟─b90c70c6-19e2-46f7-83b7-1145eaf2c7b9
 # ╟─33a72173-b972-4434-b5e7-55411acba353
 # ╟─79d753e6-8d92-4030-9a98-a9da9dcaa244
 # ╟─5eebab5d-7a2f-4602-9466-8b1ab0fa54df

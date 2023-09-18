@@ -5,6 +5,57 @@ using .API:
     ArrowSchema as CArrowSchema,
     ArrowArray as CArrowArray
 
+## Validity Map (*heavily* inspired by Arrow.jl)
+
+struct ValidityMap
+    ℓ::Int
+    nc::Int
+    data::Vector{UInt8}
+end
+
+function ValidityMap(v)
+    T = eltype(v)
+    if !(T >: Missing)
+        return ValidityMap(length(v), 0, UInt8[])
+    end
+
+    ℓ = length(v)
+    nc = 0
+
+    blen = cld(ℓ, 8)
+    rest = ℓ % 8
+    bits = Vector{UInt8}(undef, blen)
+
+    b = 0x00
+    for i in eachindex(v)
+        i -= 1
+
+        @inbounds if !ismissing(v[i+1])
+            b |= 0x01 << (i % 8)
+        end
+
+        @inbounds if (i + 1) % 8 == 0
+            bits[1+i÷8] = b
+            nc += Base.count_zeros(b)
+            b = 0x00
+        end
+    end
+    rest != 0 && (@inbounds bits[end] = b; nc += Base.count_zeros(b) - (8 - rest))
+
+    ValidityMap(ℓ, nc, bits)
+end
+
+function isvalid(vm::ValidityMap, i)
+    i -= 1
+    b = vm.data[1+i÷8]
+    Bool((b >> (i % 8)) & 0x01)
+end
+
+function validitybuffer(vm::ValidityMap)
+    iszero(vm.nc) && return Ptr{UInt8}(C_NULL)
+    pointer(vm.data)
+end
+
 function parse_format(schema)
     fmt = unsafe_string(schema.format)
 
@@ -199,6 +250,7 @@ function format(T)
 
     throw("cannot find a arrow format for type $T")
 end
+format(::Type{MaybeMissing{T}}) where {T} = format(T)
 format(::Type{Nothing}) = "n"
 format(::Type{Bool}) = "b"
 format(::Type{Int8}) = "c"
@@ -217,7 +269,7 @@ format(::Type{Vector{<:Any}}) = "+l"
 format(::Type{String}) = "u"
 
 mutable struct ArrowArray
-    length::Int64
+    vm::ValidityMap
 
     buffers::Vector{Union{Ptr,Vector}}
     buffer_ptrs::Vector{Ptr{UInt8}}
@@ -269,27 +321,24 @@ function set_private_data!(array::ArrowArray)
     nothing
 end
 
-function ArrowArray(buffers, children=[])
-    l = length(buffers) >= 2 ?
-        length(last(buffers)) :
-        only(map(child -> child.length, children) |> unique)
-
-    buffer_ptrs = [buffer isa Ptr ? Ptr{UInt8}(buffer) : Ptr{UInt8}(pointer(buffer))
-                   for buffer in buffers]
+function ArrowArray(vm::ValidityMap, buffers, children=[])
+    buffer_ptrs = [validitybuffer(vm),
+        (buffer isa Ptr ? Ptr{UInt8}(buffer) : Ptr{UInt8}(pointer(buffer))
+         for buffer in buffers)...]
     children_ptrs = [Base.unsafe_convert(Ptr{CArrowArray}, children) for children in children]
 
     array = ArrowArray(
-        l,
+        vm,
         buffers,
         buffer_ptrs,
         children,
         children_ptrs,
         CArrowArray(
-            l,
+            vm.ℓ,
+            vm.nc,
             0,
-            0,
-            length(buffers),
-            length(children),
+            length(buffer_ptrs),
+            length(children_ptrs),
             pointer(buffer_ptrs),
             pointer(children_ptrs),
             C_NULL,
@@ -317,18 +366,34 @@ const LIVE_SCHEMAS = IdDict{ArrowSchema,Nothing}()
 "Holds references to the live arrays whose ownership has been given through ffi."
 const LIVE_ARRAYS = IdDict{ArrowArray,Nothing}()
 
-function arrowvector(v::Vector{T}) where {T<:PhysicalDType}
-    @assert !any(ismissing, v)
-    ArrowArray([C_NULL, v], [])
-end
+arrowvector(v::Vector{T}) where {T<:PhysicalDType} =
+    ArrowArray(ValidityMap(v), [v], [])
+arrowvector(v::Vector{MaybeMissing{T}}) where {T<:PhysicalDType} =
+    ArrowArray(ValidityMap(v), [v], [])
 
-function arrowvector(v::Vector{MaybeMissing{T}}) where {T<:PhysicalDType}
-    validity_map = ones(UInt8, div(length(v), 8))
-    for i in eachindex(v)
-        el = v[i]
-        ismissing(el) && (validity_map[i%8] ^= 1)
+function arrowvector(v::Vector{S}) where {S<:Union{MaybeMissing{String},String}}
+    byte_lengths = map(x -> ismissing(x) ? zero(UInt32) : UInt32(sizeof(x)), v)
+
+    # The offsets buffer contains length + 1 signed integers (either 32-bit or 64-bit, depending on the logical type),
+    # which encode the start position of each slot in the data buffer.
+    # The length of the value in each slot is computed using the difference between
+    # the offset at that slot’s index and the subsequent offset.
+    offsets = Vector{UInt32}(undef, length(v) + 1)
+
+    # Generally the first slot in the offsets array is 0, and the last slot is the length of the values array.
+    # When serializing this layout, we recommend normalizing the offsets to start at 0.
+    offsets[begin] = zero(UInt32)
+    @views cumsum!(offsets[begin+1:end], byte_lengths[begin:end])
+
+    value_buffer = Vector{UInt8}(undef, sum(byte_lengths))
+
+    for (i, s) in enumerate(v)
+        ismissing(s) && continue
+        copyto!(@view(value_buffer[1+offsets[i]:offsets[i+1]]),
+                codeunits(s))
     end
-    ArrowArray([validity_map, v], [])
+
+    ArrowArray(ValidityMap(v), Vector[offsets, value_buffer], [])
 end
 
 # Encodes the provided table to an ArrowArray
@@ -343,16 +408,20 @@ function arrowtable(table, table_name)
         ArrowSchema(; format=format(type), name=string(name))
     end
 
-    schema = ArrowSchema(; 
+    schema = ArrowSchema(;
         format="+s",
         name=table_name,
-        children,
+        children
     )
 
-    array = ArrowArray([C_NULL], [
+    ℓ = Tables.rowcount(table)
+    array = ArrowArray(ValidityMap(ℓ, 0, UInt8[]), [], [
         arrowvector(t)
         for t in Tables.columns(table)
     ])
 
     array, schema
 end
+
+
+

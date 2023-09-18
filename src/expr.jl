@@ -142,6 +142,15 @@ end
 suffix(suf) = Base.Fix2(suffix, suf)
 
 """
+    lit(x)::Polars.Expr
+Transforms a literal value as an expression which will broadcast when used with other
+expressions.
+"""
+function lit(v)
+    convert(Expr, v) 
+end
+
+"""
     cast(expr::Polars.Expr, dtype::Type)::Polars.Expr
     cast(dtype::Type)::Base.Fix2{typeof(cast), ::Type}
 
@@ -376,5 +385,5 @@ export field_by_name, field_by_index, rename_fields
 
 end # module Structs
 
-export col, alias, prefix, suffix, cast,
+export col, alias, prefix, suffix, lit, cast,
        Lists, Strings, Structs
