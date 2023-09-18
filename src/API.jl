@@ -378,6 +378,10 @@ function polars_expr_is_not_null(expr)
     @ccall libpolars.polars_expr_is_not_null(expr::Ptr{polars_expr_t})::Ptr{polars_expr_t}
 end
 
+function polars_expr_null_count(expr)
+    @ccall libpolars.polars_expr_null_count(expr::Ptr{polars_expr_t})::Ptr{polars_expr_t}
+end
+
 function polars_expr_drop_nans(expr)
     @ccall libpolars.polars_expr_drop_nans(expr::Ptr{polars_expr_t})::Ptr{polars_expr_t}
 end

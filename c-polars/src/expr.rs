@@ -187,6 +187,7 @@ gen_impl_expr!(polars_expr_is_infinite, Expr::is_infinite);
 gen_impl_expr!(polars_expr_is_nan, Expr::is_nan);
 gen_impl_expr!(polars_expr_is_null, Expr::is_null);
 gen_impl_expr!(polars_expr_is_not_null, Expr::is_not_null);
+gen_impl_expr!(polars_expr_null_count, Expr::null_count);
 gen_impl_expr!(polars_expr_drop_nans, Expr::drop_nans);
 gen_impl_expr!(polars_expr_drop_nulls, Expr::drop_nulls);
 

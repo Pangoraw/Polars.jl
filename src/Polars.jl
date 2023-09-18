@@ -421,7 +421,20 @@ import Tables: schema
 
 function schema(df::DataFrame)
     schema = API.polars_dataframe_schema(df)
-    load_dataframe_schema(schema)
+    (; names, types) = load_dataframe_schema(schema)
+
+    # Refine types by fetching real null counts, this should be quite
+    # cheap.
+    null_counts = select(df, map(null_count∘col∘string, names)...)
+    types = map(zip(names, types)) do (name, T)
+        if iszero(only(null_counts[name]))
+            nomissing(T)
+        else
+            T
+        end
+    end
+
+    Tables.Schema(names, types)
 end
 
 Tables.istable(::DataFrame) = true

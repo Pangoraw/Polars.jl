@@ -32,3 +32,27 @@ end
 
     @test df[:tmp] == df2[:tmp]
 end
+
+@testset "Exprs" begin
+    df = DataFrame((; x=[1,2,3,3.1,missing]))
+
+    @test filter(df, col("x") >= 2) |> size == (3,1)
+    @test filter(df, col("x") > 2)  |> size == (2,1)
+    @test filter(df, col("x") == 2) |> size == (1,1)
+
+    @test filter(df, col("x") |> is_null) |> size == (1,1)
+    @test filter(df, col("x") |> is_null |> Polars.not) |> size == (4,1)
+
+    df = DataFrame((; names = ["john", "alice", missing, "bob", "lilly"]))
+
+    lengths = select(df, col("names") |> Strings.lengths |> sum |> suffix("_lengths"))[:names_lengths] |> only
+    @test lengths == length("john") + length("alice") + length("bob") + length("lilly")
+
+    df = DataFrame((; names = ["eggs 🥚", "cheese 🧀", "tomatoes 🍅"],
+                      price = [1.2, 3.4, 5.4],
+                      availability = [20, 2, 3]))
+    df = filter(df, (col("price") * col("availability")) < 10.)
+    df = select(df, col("names") |> Strings.uppercase |> alias("tobuy"))
+
+    @test df[:tobuy] == ["CHEESE 🧀"]
+end

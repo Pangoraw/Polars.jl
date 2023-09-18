@@ -251,6 +251,8 @@ const struct polars_expr_t *polars_expr_is_null(const struct polars_expr_t *expr
 
 const struct polars_expr_t *polars_expr_is_not_null(const struct polars_expr_t *expr);
 
+const struct polars_expr_t *polars_expr_null_count(const struct polars_expr_t *expr);
+
 const struct polars_expr_t *polars_expr_drop_nans(const struct polars_expr_t *expr);
 
 const struct polars_expr_t *polars_expr_drop_nulls(const struct polars_expr_t *expr);

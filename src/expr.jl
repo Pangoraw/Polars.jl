@@ -5,7 +5,9 @@ Internal structure representing a value in a Polars expression.
 This should not be constructed directly but rather use helper functions
 such as [`col`](@ref).
 """
-mutable struct Expr
+mutable struct Expr <: Number
+                    #  ↑
+                    #  this is needed to use type promotion
     ptr::Ptr{polars_expr_t}
 
     Expr(ptr) = finalizer(polars_expr_destroy, new(ptr))
@@ -13,18 +15,7 @@ end
 
 Base.unsafe_convert(::Type{Ptr{polars_expr_t}}, expr::Expr) = expr.ptr
 
-Base.promote_rule(::Type{Expr}, ::Type{UInt32}) = Expr
-Base.promote_rule(::Type{Expr}, ::Type{UInt64}) = Expr
-Base.promote_rule(::Type{Expr}, ::Type{Int32}) = Expr
-Base.promote_rule(::Type{Expr}, ::Type{Int64}) = Expr
-Base.promote_rule(::Type{Expr}, ::Type{Float32}) = Expr
-Base.promote_rule(::Type{Expr}, ::Type{Float64}) = Expr
-
-# TODO: improve this:
-Base.convert(::Type{Expr}, p::Pair{Expr,Symbol}) = alias(p[1], string(p[2])::String)
-Base.convert(::Type{Expr}, p::Pair{Symbol,<:Any}) = convert(Expr, col(string(p[1])) => p[2])
-Base.convert(::Type{Expr}, p::Pair{Expr,<:Any}) = p[2](p[1])
-Base.convert(::Type{Expr}, p::Pair{Expr,Pair{T,Symbol}}) where {T} = alias(p[2][1](p[1]), string(p[2][2]))
+Base.promote_rule(::Type{Expr}, ::Type{T}) where {T<:PhysicalDType} = Expr
 
 Base.convert(::Type{Expr}, ::Colon) = col("*")
 function Base.convert(::Type{Expr}, v::Int32)
@@ -55,7 +46,7 @@ function Base.convert(::Type{Expr}, f::Float64)
     out = polars_expr_literal_f64(f)
     Expr(out)
 end
-function Base.convert(::Type{Expr}, ::Nothing)
+function Base.convert(::Type{Expr}, ::Missing)
     out = polars_expr_literal_null()
     Expr(out)
 end
@@ -66,25 +57,26 @@ function Base.convert(::Type{Expr}, s::String)
     Expr(out[])
 end
 
-Base.:+(a, b::Expr) = add(promote(a, b)...)
-Base.:-(a, b::Expr) = sub(promote(a, b)...)
-Base.:*(a, b::Expr) = mul(promote(a, b)...)
-Base.:/(a, b::Expr) = div(promote(a, b)...)
+Base.:(==)(a::Expr, b::Expr) = eq(a, b)
+Base.isequal(a::Expr, b::Expr) = eq(a, b)
+Base.isless(a::Expr, b::Expr) = Base.lt(a, b)
+Base.isless(a::Expr, b) = isless(promote(a,b)...)
+Base.isless(a, b::Expr) = isless(promote(a,b)...)
 Base.isequal(a, b::Expr) = eq(promote(a, b)...)
-Base.isless(a, b::Expr) = Base.lt(promote(a, b)...)
-
-Base.:+(a::Expr, b) = add(promote(a, b)...)
-Base.:-(a::Expr, b) = sub(promote(a, b)...)
-Base.:*(a::Expr, b) = mul(promote(a, b)...)
-Base.:/(a::Expr, b) = div(promote(a, b)...)
 Base.isequal(a::Expr, b) = eq(promote(a, b)...)
-Base.isless(a::Expr, b) = Base.lt(promote(a, b)...)
 
+Base.:+(a::Expr, b::Expr) = add(a, b)
+Base.:-(a::Expr, b::Expr) = sub(a, b)
+Base.:*(a::Expr, b::Expr) = mul(a, b)
+Base.:/(a::Expr, b::Expr) = div(a, b)
+Base.:^(a::Expr, b::Expr) = pow(a, b)
+
+Base.:&(a::Expr, b::Expr) = and(promote(a, b)...)
+Base.:|(a::Expr, b::Expr) = or(promote(a, b)...)
+Base.:&(a, b::Expr) = and(promote(a, b)...)
+Base.:|(a, b::Expr) = or(promote(a, b)...)
 Base.:&(a::Expr, b) = and(promote(a, b)...)
 Base.:|(a::Expr, b) = or(promote(a, b)...)
-
-Base.:&(a::Expr, b::Expr) = and(a, b)
-Base.:|(a::Expr, b::Expr) = or(a, b)
 
 """
     col(name::String)::Polars.Expr
@@ -276,6 +268,7 @@ end
     gen_impl_expr!(polars_expr_is_nan, Expr::is_nan)
     gen_impl_expr!(polars_expr_is_null, Expr::is_null)
     gen_impl_expr!(polars_expr_is_not_null, Expr::is_not_null)
+    gen_impl_expr!(polars_expr_null_count, Expr::null_count)
     gen_impl_expr!(polars_expr_drop_nans, Expr::drop_nans)
     gen_impl_expr!(polars_expr_drop_nulls, Expr::drop_nulls)
 
