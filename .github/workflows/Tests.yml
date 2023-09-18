@@ -5,6 +5,11 @@ on:
     branches:
       - main
 
+# This action needs permission to write the exported HTML file to the gh-pages branch.
+permissions:
+    contents: write
+    # (all other permission fields default to "none")
+
 env:
   CARGO_TERM_COLOR: always
 
