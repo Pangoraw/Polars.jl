@@ -5,19 +5,18 @@ on:
     branches:
       - main
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   test:
     runs-on: "ubuntu-latest"
 
     steps:
-      - uses: actions/checkout@v3
-      - name: Compile libpolars
-        id: compile
-        uses: rust-build/rust-build.action@v1.4.3
-        with:
-          RUSTTARGET: x86_64-unknown-linux-musl
-          UPLOAD_MODE: none
-          SRC_DIR: c-polars
+      - uses: actions/checkout@v3    
+      - name: Build libpolars
+        run: cargo build --verbose
+        working-directory: ./c-polars
       - uses: julia-actions/setup-julia@v1
         with:
           version: 1.9
