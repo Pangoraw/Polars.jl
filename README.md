@@ -46,6 +46,10 @@ julia> select(gbagg_sorted,
                                          17 rows omitted
 ```
 
+## References
+
+Julia already has a very good dataframe story with [DataFrames.jl](https://github.com/JuliaData/DataFrames.jl), which provides a more Julian experience since any types of collections can be used as a column. On the other hand, Polars works through the Arrow data format and therefore only supports certain physical vectors (materialized in memory) such as `Vector{Int}`. Polars.jl focuses on wrapping operations on lazy frames since it is one of the main differentiating factor with DataFrames. Indeed eager operations are implemented as `collect∘op∘lazy`. Consider trying DataFrames.jl if your problem involves a lot of Julia "interopability" where Polars would not offer the same level of interopability.
+
 ## Polars C-API
 
 To build the polars c-api, run the following commands:
