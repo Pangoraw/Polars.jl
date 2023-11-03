@@ -117,25 +117,42 @@ pub extern "C" fn polars_dataframe_new_from_carrow(
 ) -> *mut polars_dataframe_t {
     // Safety: the field ptr is expected to be a valid pointer to an ArrowSchema according to
     // the C Data interface.
-    let Ok(field) = (unsafe { ffi::import_field_from_c(&*cfield) }) else {
-        return std::ptr::null_mut();
+    let field = match unsafe { ffi::import_field_from_c(&*cfield) } {
+        Ok(field) => field,
+        Err(err) => {
+            #[cfg(debug_assertions)]
+            eprintln!("error: {err}");
+            return std::ptr::null_mut();
+        }
     };
 
     // Safety: carray will not be destroyed at the end of the function since import_array_from_c
     // takes ownership of it. Therefore, it should be destroyed once the dataframe is destroyed
     // using polars_dataframe_destroy.
-    let Ok(array) = (unsafe { ffi::import_array_from_c(carray, field.data_type.clone()) }) else {
-        return std::ptr::null_mut();
+    let array = match unsafe { ffi::import_array_from_c(carray, field.data_type.clone()) } {
+        Ok(array) => array,
+        Err(err) => {
+            #[cfg(debug_assertions)]
+            eprintln!("error: {err}");
+            return std::ptr::null_mut();
+        }
     };
 
     let Some(sarray) = array.as_any().downcast_ref::<StructArray>() else {
+        #[cfg(debug_assertions)]
+        eprintln!("cannot create struct array");
         // caller is expected to provide a struct array (encoding +s) with field
         // being the columns.
         return std::ptr::null_mut();
     };
 
-    let Ok(df) = DataFrame::try_from(sarray.clone()) else {
-        return std::ptr::null_mut();
+    let df = match DataFrame::try_from(sarray.clone()) {
+        Ok(df) => df,
+        Err(err) => {
+            #[cfg(debug_assertions)]
+            eprintln!("error: {err}");
+            return std::ptr::null_mut();
+        },
     };
 
     make_dataframe(df)

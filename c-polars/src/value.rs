@@ -20,6 +20,7 @@ pub enum polars_value_type_t {
     PolarsValueTypeUtf8,
     PolarsValueTypeStruct,
     PolarsValueTypeBinary,
+    PolarsValueTypeCategorical,
     PolarsValueTypeUnknown,
 }
 
@@ -43,6 +44,7 @@ impl polars_value_type_t {
             DataType::Utf8 => PolarsValueTypeUtf8,
             DataType::Struct(_) => PolarsValueTypeStruct,
             DataType::Binary => PolarsValueTypeBinary,
+            DataType::Categorical(_) => PolarsValueTypeCategorical,
             DataType::Unknown => PolarsValueTypeUnknown,
             _ => PolarsValueTypeUnknown,
         }
@@ -132,6 +134,9 @@ pub unsafe extern "C" fn polars_value_utf8_get(
     let mut w = UserIOCallback(callback, user);
     let Err(err) = (match (*value).inner {
         AnyValue::Utf8(s) => w.write(s.as_bytes()),
+        AnyValue::Categorical(_, _, _) => {
+            return polars_value_categorical_get(value, user, callback)
+        }
         _ => return make_error("value is not of type utf8"),
     }) else {
         return std::ptr::null();
@@ -153,6 +158,34 @@ pub unsafe extern "C" fn polars_value_binary_get(
         return std::ptr::null();
     };
     make_error(err)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn polars_value_categorical_get(
+    value: *mut polars_value_t,
+    user: *mut c_void,
+    callback: IOCallback,
+) -> *const polars_error_t {
+    let AnyValue::Categorical(idx, rev_mapping, pool) = &(*value).inner else {
+        return make_error("invalid type for value");
+    };
+
+    let v = if pool.is_null() {
+        rev_mapping.get(*idx)
+    } else {
+        let p = pool.get();
+        let Some(v) = (*p).get(*idx as usize) else {
+            return make_error("invalid");
+        };
+        v
+    };
+
+    let mut w = UserIOCallback(callback, user);
+    let Ok(_) = w.write(v.as_bytes()) else {
+        return make_error("failed to write value");
+    };
+
+    std::ptr::null()
 }
 
 /// Used to get value of of a Struct value fields.

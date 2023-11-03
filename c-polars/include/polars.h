@@ -23,6 +23,7 @@ typedef enum polars_value_type_t {
   PolarsValueTypeUtf8,
   PolarsValueTypeStruct,
   PolarsValueTypeBinary,
+  PolarsValueTypeCategorical,
   PolarsValueTypeUnknown,
 } polars_value_type_t;
 
@@ -186,6 +187,8 @@ const struct polars_error_t *polars_expr_suffix(const struct polars_expr_t *expr
                                                 uintptr_t len,
                                                 const struct polars_expr_t **out);
 
+const struct polars_expr_t *polars_expr_count(void);
+
 const struct polars_expr_t *polars_expr_cast(const struct polars_expr_t *expr,
                                              enum polars_value_type_t dtype);
 
@@ -233,7 +236,7 @@ const struct polars_expr_t *polars_expr_n_unique(const struct polars_expr_t *exp
 
 const struct polars_expr_t *polars_expr_unique(const struct polars_expr_t *expr);
 
-const struct polars_expr_t *polars_expr_count(const struct polars_expr_t *expr);
+const struct polars_expr_t *polars_expr_count_unary(const struct polars_expr_t *expr);
 
 const struct polars_expr_t *polars_expr_first(const struct polars_expr_t *expr);
 
@@ -262,6 +265,10 @@ const struct polars_expr_t *polars_expr_implode(const struct polars_expr_t *expr
 const struct polars_expr_t *polars_expr_flatten(const struct polars_expr_t *expr);
 
 const struct polars_expr_t *polars_expr_reverse(const struct polars_expr_t *expr);
+
+const struct polars_expr_t *polars_expr_var(const struct polars_expr_t *expr, uint8_t ddof);
+
+const struct polars_expr_t *polars_expr_std(const struct polars_expr_t *expr, uint8_t ddof);
 
 const struct polars_expr_t *polars_expr_eq(const struct polars_expr_t *a,
                                            const struct polars_expr_t *b);
@@ -295,6 +302,12 @@ const struct polars_expr_t *polars_expr_mul(const struct polars_expr_t *a,
 
 const struct polars_expr_t *polars_expr_div(const struct polars_expr_t *a,
                                             const struct polars_expr_t *b);
+
+const struct polars_expr_t *polars_expr_fill_null(const struct polars_expr_t *a,
+                                                  const struct polars_expr_t *b);
+
+const struct polars_expr_t *polars_expr_fill_nan(const struct polars_expr_t *a,
+                                                 const struct polars_expr_t *b);
 
 const struct polars_expr_t *polars_expr_list_lengths(const struct polars_expr_t *a);
 
@@ -463,6 +476,10 @@ const struct polars_error_t *polars_value_utf8_get(struct polars_value_t *value,
 const struct polars_error_t *polars_value_binary_get(struct polars_value_t *value,
                                                      void *user,
                                                      IOCallback callback);
+
+const struct polars_error_t *polars_value_categorical_get(struct polars_value_t *value,
+                                                          void *user,
+                                                          IOCallback callback);
 
 /**
  * Used to get value of of a Struct value fields.

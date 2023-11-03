@@ -133,6 +133,11 @@ pub unsafe extern "C" fn polars_expr_suffix(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn polars_expr_count() -> *const polars_expr_t {
+    make_expr(polars::prelude::count())
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn polars_expr_cast(
     expr: *const polars_expr_t,
     dtype: polars_value_type_t,
@@ -177,7 +182,7 @@ gen_impl_expr!(polars_expr_tanh, Expr::tanh);
 
 gen_impl_expr!(polars_expr_n_unique, Expr::n_unique);
 gen_impl_expr!(polars_expr_unique, Expr::unique);
-gen_impl_expr!(polars_expr_count, Expr::count);
+gen_impl_expr!(polars_expr_count_unary, Expr::count);
 gen_impl_expr!(polars_expr_first, Expr::first);
 gen_impl_expr!(polars_expr_last, Expr::last);
 
@@ -194,6 +199,20 @@ gen_impl_expr!(polars_expr_drop_nulls, Expr::drop_nulls);
 gen_impl_expr!(polars_expr_implode, Expr::implode);
 gen_impl_expr!(polars_expr_flatten, Expr::flatten);
 gen_impl_expr!(polars_expr_reverse, Expr::reverse);
+
+macro_rules! gen_impl_expr_with_u8 {
+    ($n: ident, $t: expr) => {
+        #[no_mangle]
+        pub unsafe extern "C" fn $n(expr: *const polars_expr_t, ddof: u8) -> *const polars_expr_t {
+            let expr = &(*expr).inner;
+            let out_expr = $t(expr.clone(), ddof);
+            make_expr(out_expr)
+        }
+    };
+}
+
+gen_impl_expr_with_u8!(polars_expr_var, Expr::var);
+gen_impl_expr_with_u8!(polars_expr_std, Expr::std);
 
 macro_rules! gen_impl_expr_binary {
     ($n: ident, $t: expr) => {
@@ -222,6 +241,9 @@ gen_impl_expr_binary!(polars_expr_add, core::ops::Add::add);
 gen_impl_expr_binary!(polars_expr_sub, core::ops::Sub::sub);
 gen_impl_expr_binary!(polars_expr_mul, core::ops::Mul::mul);
 gen_impl_expr_binary!(polars_expr_div, core::ops::Div::div);
+
+gen_impl_expr_binary!(polars_expr_fill_null, Expr::fill_null);
+gen_impl_expr_binary!(polars_expr_fill_nan, Expr::fill_nan);
 
 macro_rules! gen_impl_expr_list {
     ($n: ident, $t: expr) => {

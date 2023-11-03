@@ -17,4 +17,4 @@ rev = "c6a301e3141d40c6c6febdebe0b95632ac8da2ed" # https://github.com/pola-rs/po
 [dependencies.polars]
 git = "https://github.com/pola-rs/polars"
 rev = "c6a301e3141d40c6c6febdebe0b95632ac8da2ed" # https://github.com/pola-rs/polars/pull/10568
-features = ["parquet", "lazy", "performant"]
+features = ["parquet", "lazy", "performant", "dtype-categorical"]
