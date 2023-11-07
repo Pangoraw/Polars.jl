@@ -101,7 +101,7 @@ pub unsafe extern "C" fn polars_expr_alias(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn polars_expr_prefix(
+pub unsafe extern "C" fn polars_expr_name_prefix(
     expr: *const polars_expr_t,
     name: *const u8,
     len: usize,
@@ -111,13 +111,19 @@ pub unsafe extern "C" fn polars_expr_prefix(
         Ok(value) => value,
         Err(err) => return make_error(err),
     };
-    let aliased = (*expr).inner.clone().prefix(name);
+    let aliased = (*expr).inner.clone().name().prefix(name);
     *out = make_expr(aliased);
     std::ptr::null()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn polars_expr_suffix(
+pub unsafe extern "C" fn polars_expr_name_keep(expr: *const polars_expr_t) -> *const polars_expr_t {
+    let out = (*expr).inner.clone().name().keep();
+    make_expr(out)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn polars_expr_name_suffix(
     expr: *const polars_expr_t,
     name: *const u8,
     len: usize,
@@ -127,7 +133,7 @@ pub unsafe extern "C" fn polars_expr_suffix(
         Ok(value) => value,
         Err(err) => return make_error(err),
     };
-    let aliased = (*expr).inner.clone().suffix(name);
+    let aliased = (*expr).inner.clone().name().suffix(name);
     *out = make_expr(aliased);
     std::ptr::null()
 }
@@ -156,8 +162,6 @@ macro_rules! gen_impl_expr {
         }
     };
 }
-
-gen_impl_expr!(polars_expr_keep_name, Expr::keep_name);
 
 gen_impl_expr!(polars_expr_sum, Expr::sum);
 gen_impl_expr!(polars_expr_product, Expr::product);
@@ -255,7 +259,7 @@ macro_rules! gen_impl_expr_list {
     };
 }
 
-gen_impl_expr_list!(polars_expr_list_lengths, ListNameSpace::lengths);
+gen_impl_expr_list!(polars_expr_list_len, ListNameSpace::len);
 gen_impl_expr_list!(polars_expr_list_max, ListNameSpace::max);
 gen_impl_expr_list!(polars_expr_list_min, ListNameSpace::min);
 gen_impl_expr_list!(polars_expr_list_arg_max, ListNameSpace::arg_max);
@@ -299,8 +303,8 @@ gen_impl_expr_str!(polars_expr_str_to_uppercase, StringNameSpace::to_uppercase);
 gen_impl_expr_str!(polars_expr_str_to_lowercase, StringNameSpace::to_lowercase);
 #[cfg(feature = "nightly")]
 gen_impl_expr_str!(polars_expr_str_to_titlecase, StringNameSpace::to_titlecase);
-gen_impl_expr_str!(polars_expr_str_n_chars, StringNameSpace::n_chars);
-gen_impl_expr_str!(polars_expr_str_lengths, StringNameSpace::lengths);
+gen_impl_expr_str!(polars_expr_str_len_chars, StringNameSpace::len_chars);
+gen_impl_expr_str!(polars_expr_str_len_bytes, StringNameSpace::len_bytes);
 gen_impl_expr_str!(polars_expr_str_explode, StringNameSpace::explode);
 
 macro_rules! gen_impl_expr_binary_str {

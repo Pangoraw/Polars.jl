@@ -443,7 +443,7 @@ pub unsafe extern "C" fn polars_lazy_frame_group_by(
         .iter()
         .map(|expr| (**expr).inner.clone())
         .collect();
-    let gb = (*df).inner.clone().groupby(&exprs);
+    let gb = (*df).inner.clone().group_by(&exprs);
     Box::into_raw(Box::new(polars_lazy_group_by_t { inner: gb }))
 }
 

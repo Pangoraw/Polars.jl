@@ -19,10 +19,18 @@ function _write_callback(user, data, len)
     end
 end
 
-
 include("./API.jl")
 
 using .API
+
+function polars_error(err::Ptr{polars_error_t})
+    err == C_NULL && return
+    str = Ref{Ptr{UInt8}}()
+    len = polars_error_message(err, str)
+    message = unsafe_string(str[], len)
+    polars_error_destroy(err)
+    error(message)
+end
 
 include("./arrow.jl")
 include("./expr.jl")
@@ -39,15 +47,6 @@ function version()
     len = polars_version(out)
     ver = unsafe_string(out[], len)
     VersionNumber(ver)
-end
-
-function polars_error(err::Ptr{polars_error_t})
-    err == C_NULL && return
-    str = Ref{Ptr{UInt8}}()
-    len = polars_error_message(err, str)
-    message = unsafe_string(str[], len)
-    polars_error_destroy(err)
-    error(message)
 end
 
 mutable struct DataFrame

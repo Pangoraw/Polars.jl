@@ -247,12 +247,16 @@ function polars_expr_alias(expr, name, len, out)
     @ccall libpolars.polars_expr_alias(expr::Ptr{polars_expr_t}, name::Ptr{UInt8}, len::Csize_t, out::Ptr{Ptr{polars_expr_t}})::Ptr{polars_error_t}
 end
 
-function polars_expr_prefix(expr, name, len, out)
-    @ccall libpolars.polars_expr_prefix(expr::Ptr{polars_expr_t}, name::Ptr{UInt8}, len::Csize_t, out::Ptr{Ptr{polars_expr_t}})::Ptr{polars_error_t}
+function polars_expr_name_prefix(expr, name, len, out)
+    @ccall libpolars.polars_expr_name_prefix(expr::Ptr{polars_expr_t}, name::Ptr{UInt8}, len::Csize_t, out::Ptr{Ptr{polars_expr_t}})::Ptr{polars_error_t}
 end
 
-function polars_expr_suffix(expr, name, len, out)
-    @ccall libpolars.polars_expr_suffix(expr::Ptr{polars_expr_t}, name::Ptr{UInt8}, len::Csize_t, out::Ptr{Ptr{polars_expr_t}})::Ptr{polars_error_t}
+function polars_expr_name_keep(expr)
+    @ccall libpolars.polars_expr_name_keep(expr::Ptr{polars_expr_t})::Ptr{polars_expr_t}
+end
+
+function polars_expr_name_suffix(expr, name, len, out)
+    @ccall libpolars.polars_expr_name_suffix(expr::Ptr{polars_expr_t}, name::Ptr{UInt8}, len::Csize_t, out::Ptr{Ptr{polars_expr_t}})::Ptr{polars_error_t}
 end
 
 function polars_expr_count()
@@ -261,10 +265,6 @@ end
 
 function polars_expr_cast(expr, dtype)
     @ccall libpolars.polars_expr_cast(expr::Ptr{polars_expr_t}, dtype::polars_value_type_t)::Ptr{polars_expr_t}
-end
-
-function polars_expr_keep_name(expr)
-    @ccall libpolars.polars_expr_keep_name(expr::Ptr{polars_expr_t})::Ptr{polars_expr_t}
 end
 
 function polars_expr_sum(expr)
@@ -471,8 +471,8 @@ function polars_expr_fill_nan(a, b)
     @ccall libpolars.polars_expr_fill_nan(a::Ptr{polars_expr_t}, b::Ptr{polars_expr_t})::Ptr{polars_expr_t}
 end
 
-function polars_expr_list_lengths(a)
-    @ccall libpolars.polars_expr_list_lengths(a::Ptr{polars_expr_t})::Ptr{polars_expr_t}
+function polars_expr_list_len(a)
+    @ccall libpolars.polars_expr_list_len(a::Ptr{polars_expr_t})::Ptr{polars_expr_t}
 end
 
 function polars_expr_list_max(a)
@@ -539,12 +539,12 @@ function polars_expr_str_to_lowercase(a)
     @ccall libpolars.polars_expr_str_to_lowercase(a::Ptr{polars_expr_t})::Ptr{polars_expr_t}
 end
 
-function polars_expr_str_n_chars(a)
-    @ccall libpolars.polars_expr_str_n_chars(a::Ptr{polars_expr_t})::Ptr{polars_expr_t}
+function polars_expr_str_len_chars(a)
+    @ccall libpolars.polars_expr_str_len_chars(a::Ptr{polars_expr_t})::Ptr{polars_expr_t}
 end
 
-function polars_expr_str_lengths(a)
-    @ccall libpolars.polars_expr_str_lengths(a::Ptr{polars_expr_t})::Ptr{polars_expr_t}
+function polars_expr_str_len_bytes(a)
+    @ccall libpolars.polars_expr_str_len_bytes(a::Ptr{polars_expr_t})::Ptr{polars_expr_t}
 end
 
 function polars_expr_str_explode(a)

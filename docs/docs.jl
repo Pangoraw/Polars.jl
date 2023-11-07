@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.25
+# v0.19.31
 
 using Markdown
 using InteractiveUtils
@@ -52,23 +52,24 @@ md"""
 
 Polars datatypes map to the corresponding Julia type according to this correspondance table:
 
-| Polars dtype | Julia type |
-|--------------|------------|
-| Null         | Missing    |
-| Boolean      | Bool       |
-| UInt8        | UInt8      |
-| UInt16       | UInt16     |
-| UInt32       | UInt32     |
-| UInt64       | UInt64     |
-| Int8         | Int8       |
-| Int16        | Int16      |
-| Int32        | Int32      |
-| Int64        | Int64      |
-| Float32      | Float32    |
-| Float64      | Float64    |
-| UTF8         | String     |
-| List<t>      | Series{T}  |
-| Struct       | NamedTuple |
+| Polars dtype | Julia type          |
+|--------------|---------------------|
+| Null         | Missing             |
+| Boolean      | Bool                |
+| UInt8        | UInt8               |
+| UInt16       | UInt16              |
+| UInt32       | UInt32              |
+| UInt64       | UInt64              |
+| Int8         | Int8                |
+| Int16        | Int16               |
+| Int32        | Int32               |
+| Int64        | Int64               |
+| Float32      | Float32             |
+| Float64      | Float64             |
+| UTF8         | String              |
+| List<t>      | Series{T}           |
+| Categorical  | Categorical{String} |
+| Struct       | NamedTuple          |
 """
 
 # ╔═╡ 466c8871-e7be-4731-a347-ce6faabf8edb
@@ -147,6 +148,15 @@ Docs.Binding(Polars, :prefix)
 
 # ╔═╡ a4cd8ed5-d8e8-4907-ab33-176f906d1e3b
 Docs.Binding(Polars, :suffix)
+
+# ╔═╡ 10e5c711-1958-4dac-a68a-c6ff4003876a
+md"""
+### `Polars.Names`
+
+The `Polars.Names` module provide functions to operate on expression names.
+Some of its functions are also exported from `Polars`.
+
+"""
 
 # ╔═╡ 5eebab5d-7a2f-4602-9466-8b1ab0fa54df
 md"""
@@ -249,14 +259,14 @@ Binding(Polars, :collect)
 # ╔═╡ 6cabf4ea-cf1e-4e91-a2dd-ebf97245cca9
 Binding(Polars, :with_columns)
 
+# ╔═╡ d7f1455b-d4fb-43d9-b5d5-08f7fcae4621
+Binding(Polars, :with_row_count)
+
 # ╔═╡ 10848dd7-f82d-49bd-aa8e-3524b8dc35d6
 Binding(Polars, :filter, Tuple{Polars.LazyFrame, Polars.Expr})
 
 # ╔═╡ ca6a03f8-0b5a-47d8-b22f-16fbbd66c0fe
 Binding(Polars, :sort)
-
-# ╔═╡ 24fe0edd-eae2-4051-981f-e1951579c9e3
-Binding(Polars, :keep_name)
 
 # ╔═╡ b90c70c6-19e2-46f7-83b7-1145eaf2c7b9
 Binding(Polars, :lit)
@@ -267,11 +277,17 @@ Binding(Polars, :cast)
 # ╔═╡ 79d753e6-8d92-4030-9a98-a9da9dcaa244
 let
 	names = [:and, :not, :or, :mean, :median, :is_finite, :is_infinite, :is_nan, 			:is_null, :is_not_null, :drop_nans, :drop_nulls, :implode, :flatten,
-			 :nan_min, :nan_max, :arg_min, :arg_max]
+			 :nan_min, :nan_max, :arg_min, :arg_max, :var, :std]
+	# sort!(names, by=string)
 	Markdown.MD(map(names) do name
 		Markdown.Paragraph([Binding(Polars, name), Markdown.LineBreak()])
 	end)
 end
+
+# ╔═╡ 24fe0edd-eae2-4051-981f-e1951579c9e3
+Markdown.MD(map(filter(!=(:Names), names(Names))) do name
+	Markdown.Paragraph([Binding(Names, name), Markdown.LineBreak()])
+end)
 
 # ╔═╡ 4f19cb30-d540-4f3a-986e-295a4f892e31
 Markdown.MD(map(filter(!=(:Lists), names(Lists))) do name
@@ -330,6 +346,7 @@ html"""
 # ╠═00b9020f-e05b-4e36-bee8-71da1ce7aeeb
 # ╟─6cabf4ea-cf1e-4e91-a2dd-ebf97245cca9
 # ╠═f9459d17-b568-4b7c-b15a-7df28b1037d8
+# ╟─d7f1455b-d4fb-43d9-b5d5-08f7fcae4621
 # ╟─10848dd7-f82d-49bd-aa8e-3524b8dc35d6
 # ╠═79099779-5108-445a-87b7-ef1f9b253550
 # ╟─659172c1-59b2-4176-97bc-263a6cc19f0a
@@ -342,10 +359,11 @@ html"""
 # ╟─88841d06-f52e-4d36-9357-ccc3c1360c79
 # ╟─a67a0544-a1c5-4218-a80d-a0eb5a5ce92c
 # ╟─a4cd8ed5-d8e8-4907-ab33-176f906d1e3b
-# ╟─24fe0edd-eae2-4051-981f-e1951579c9e3
 # ╟─b90c70c6-19e2-46f7-83b7-1145eaf2c7b9
 # ╟─33a72173-b972-4434-b5e7-55411acba353
 # ╟─79d753e6-8d92-4030-9a98-a9da9dcaa244
+# ╟─10e5c711-1958-4dac-a68a-c6ff4003876a
+# ╟─24fe0edd-eae2-4051-981f-e1951579c9e3
 # ╟─5eebab5d-7a2f-4602-9466-8b1ab0fa54df
 # ╟─4f19cb30-d540-4f3a-986e-295a4f892e31
 # ╟─351798d4-ede7-4025-bfab-01b9d3984741

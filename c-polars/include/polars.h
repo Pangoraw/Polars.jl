@@ -182,22 +182,22 @@ const struct polars_error_t *polars_expr_alias(const struct polars_expr_t *expr,
                                                uintptr_t len,
                                                const struct polars_expr_t **out);
 
-const struct polars_error_t *polars_expr_prefix(const struct polars_expr_t *expr,
-                                                const uint8_t *name,
-                                                uintptr_t len,
-                                                const struct polars_expr_t **out);
+const struct polars_error_t *polars_expr_name_prefix(const struct polars_expr_t *expr,
+                                                     const uint8_t *name,
+                                                     uintptr_t len,
+                                                     const struct polars_expr_t **out);
 
-const struct polars_error_t *polars_expr_suffix(const struct polars_expr_t *expr,
-                                                const uint8_t *name,
-                                                uintptr_t len,
-                                                const struct polars_expr_t **out);
+const struct polars_expr_t *polars_expr_name_keep(const struct polars_expr_t *expr);
+
+const struct polars_error_t *polars_expr_name_suffix(const struct polars_expr_t *expr,
+                                                     const uint8_t *name,
+                                                     uintptr_t len,
+                                                     const struct polars_expr_t **out);
 
 const struct polars_expr_t *polars_expr_count(void);
 
 const struct polars_expr_t *polars_expr_cast(const struct polars_expr_t *expr,
                                              enum polars_value_type_t dtype);
-
-const struct polars_expr_t *polars_expr_keep_name(const struct polars_expr_t *expr);
 
 const struct polars_expr_t *polars_expr_sum(const struct polars_expr_t *expr);
 
@@ -314,7 +314,7 @@ const struct polars_expr_t *polars_expr_fill_null(const struct polars_expr_t *a,
 const struct polars_expr_t *polars_expr_fill_nan(const struct polars_expr_t *a,
                                                  const struct polars_expr_t *b);
 
-const struct polars_expr_t *polars_expr_list_lengths(const struct polars_expr_t *a);
+const struct polars_expr_t *polars_expr_list_len(const struct polars_expr_t *a);
 
 const struct polars_expr_t *polars_expr_list_max(const struct polars_expr_t *a);
 
@@ -351,9 +351,9 @@ const struct polars_expr_t *polars_expr_str_to_uppercase(const struct polars_exp
 
 const struct polars_expr_t *polars_expr_str_to_lowercase(const struct polars_expr_t *a);
 
-const struct polars_expr_t *polars_expr_str_n_chars(const struct polars_expr_t *a);
+const struct polars_expr_t *polars_expr_str_len_chars(const struct polars_expr_t *a);
 
-const struct polars_expr_t *polars_expr_str_lengths(const struct polars_expr_t *a);
+const struct polars_expr_t *polars_expr_str_len_bytes(const struct polars_expr_t *a);
 
 const struct polars_expr_t *polars_expr_str_explode(const struct polars_expr_t *a);
 
