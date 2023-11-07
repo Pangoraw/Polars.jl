@@ -186,6 +186,24 @@ function cast(expr, dtype)
 end
 cast(dtype) = Base.Fix2(cast, dtype)
 
+"""
+    var(expr::Polars.Expr, ddof::Integer=1)::Polars.Expr
+
+Refer to [the polars documentation](https://docs.rs/polars/latest/polars/prelude/enum.Expr.html#method.var).
+"""
+function var(expr, ddof=1)
+    Expr(polars_expr_var(expr, ddof))
+end
+
+"""
+    std(expr::Polars.Expr, ddof::Integer=1)::Polars.Expr
+
+Refer to [the polars documentation](https://docs.rs/polars/latest/polars/prelude/enum.Expr.html#method.std).
+"""
+function std(expr, ddof=1)
+    Expr(polars_expr_std(expr, ddof))
+end
+
 macro generate_expr_fns(ex)
     @assert ex.head === :block
     out = Base.Expr(:block)
@@ -384,4 +402,5 @@ export field_by_name, field_by_index, rename_fields
 end # module Structs
 
 export col, alias, prefix, suffix, lit, cast,
+       var, std,
        Lists, Strings, Structs
