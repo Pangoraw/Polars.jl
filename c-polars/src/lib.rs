@@ -152,7 +152,7 @@ pub extern "C" fn polars_dataframe_new_from_carrow(
             #[cfg(debug_assertions)]
             eprintln!("error: {err}");
             return std::ptr::null_mut();
-        },
+        }
     };
 
     make_dataframe(df)
@@ -370,6 +370,26 @@ pub unsafe extern "C" fn polars_lazy_frame_with_columns(
     let mut df = Box::from_raw(df);
     df.inner = df.inner.with_columns(&exprs);
     std::mem::forget(df);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn polars_lazy_frame_with_row_count(
+    df: *mut polars_lazy_frame_t,
+    name: *const u8,
+    len: usize,
+    offset: u32,
+) -> *const polars_error_t {
+    let name = std::slice::from_raw_parts(name, len);
+    let name = match std::str::from_utf8(name) {
+        Ok(path) => path,
+        Err(err) => return make_error(err),
+    };
+
+    let mut df = Box::from_raw(df);
+    df.inner = df.inner.with_row_count(name, Some(offset));
+    std::mem::forget(df);
+
+    std::ptr::null()
 }
 
 #[no_mangle]

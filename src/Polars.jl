@@ -4,7 +4,7 @@ import PrettyTables, Tables
 
 const MaybeMissing{T} = Union{T,Union{T,Missing}}
 const PhysicalDType = Union{Bool,Int8,Int16,Int32,Int64,UInt8,
-                            UInt16,UInt32,UInt64,Float32,Float64}
+    UInt16,UInt32,UInt64,Float32,Float64}
 
 nomissing(::Type{MaybeMissing{T}}) where {T} = T
 nomissing(::Type{T}) where {T} = T
@@ -87,7 +87,7 @@ Base.getindex(df::DataFrame, s::String) = getindex(df, Symbol(s))
 function Base.getindex(df::DataFrame, s::Symbol)
     s = string(s)::String
     out = Ref{Ptr{polars_series_t}}()
-    err = polars_dataframe_get(df, s, length(s), out)
+    err = polars_dataframe_get(df, s, sizeof(s), out)
     polars_error(err)
     Series(out[])
 end
@@ -134,7 +134,7 @@ Reads a dataframe stored in a parquet file.
 """
 function read_parquet(path)
     out = Ref{Ptr{polars_dataframe_t}}()
-    err = polars_dataframe_read_parquet(path, length(path), out)
+    err = polars_dataframe_read_parquet(path, sizeof(path), out)
     polars_error(err)
     DataFrame(out[])
 end
@@ -169,7 +169,7 @@ function Base.show(io::IO, df::DataFrame)
         vlines=Int[],
         # show_row_number=true,
         header_alignment=:l,
-        row_number_alignment=:r,
+        row_number_alignment=:r
     )
 end
 
@@ -177,7 +177,7 @@ _select!(df::LazyFrame, exprs...) = _select!(df, collect(exprs)::Vector)
 function _select!(df::LazyFrame, exprs::Vector)
     exprs = map(ex -> ex isa String ? col(ex) : ex, exprs)
     exprs = convert(Vector{Expr}, exprs)
-    @GC.preserve exprs begin
+    GC.@preserve exprs begin
         exprs_ptrs = Ptr{polars_expr_t}[expr.ptr for expr in exprs]
         polars_lazy_frame_select(df, exprs_ptrs, length(exprs_ptrs))
     end
@@ -226,10 +226,39 @@ with_columns(df::DataFrame, exprs...) = _with_columns!(lazy(df), collect(exprs):
 function _with_columns!(df::LazyFrame, exprs::Vector)
     exprs = map(ex -> ex isa String ? col(ex) : ex, exprs)
     exprs = convert(Vector{Expr}, exprs)
-    @GC.preserve exprs begin
+    GC.@preserve exprs begin
         exprs_ptrs = Ptr{polars_expr_t}[expr.ptr for expr in exprs]
         polars_lazy_frame_with_columns(df, exprs_ptrs, length(exprs_ptrs))
     end
+    df
+end
+
+"""
+    with_row_count(df::LazyFrame; name="row_nr", offset=1)::LazyFrame
+    with_row_count(df::DataFrame; name="row_nr", offset=1)::DataFrame
+
+Adds a column at index 1 that counts the rows. Use `offset` to
+change the start of the row count and `name` to set its name.
+
+```julia-repl
+julia> df = DataFrame((; name = ["a", "b", "c"]));
+
+julia> with_row_count(df; name="💥", offset=0)
+3×2 DataFrame
+ 💥      name   
+ UInt32  String 
+────────────────
+      0       a
+      1       b
+      2       c
+```
+"""
+with_row_count(df::LazyFrame; name="row_nr", offset=1) = _with_row_count!(clone(df), name, offset)
+with_row_count(df::DataFrame; name="row_nr", offset=1) = _with_row_count!(lazy(df), name, offset) |> collect
+
+function _with_row_count!(df::LazyFrame, name, offset)
+    err = polars_lazy_frame_with_row_count(df, name, sizeof(name), offset)
+    polars_error(err)
     df
 end
 
@@ -273,7 +302,7 @@ function innerjoin(a::LazyFrame, b::LazyFrame, exprs_a::Vector, exprs_b::Vector)
     exprs_a = convert(Vector{Expr}, exprs_a)
     exprs_b = map(ex -> ex isa String ? col(ex) : ex, exprs_b)
     exprs_b = convert(Vector{Expr}, exprs_b)
-    @GC.preserve exprs_a exprs_b begin
+    GC.@preserve exprs_a exprs_b begin
         exprs_a_ptr = Ptr{polars_expr_t}[expr.ptr for expr in exprs_a]
         exprs_b_ptr = Ptr{polars_expr_t}[expr.ptr for expr in exprs_b]
         out = polars_lazy_frame_join_inner(
@@ -310,7 +339,7 @@ groupby(df::LazyFrame, exprs...) = groupby(df, collect(exprs)::Vector)
 function groupby(df::LazyFrame, exprs::Vector)
     exprs = map(ex -> ex isa String ? col(ex) : ex, exprs)
     exprs = convert(Vector{Expr}, exprs)
-    @GC.preserve exprs begin
+    GC.@preserve exprs begin
         exprs_ptrs = Ptr{polars_expr_t}[expr.ptr for expr in exprs]
         out = polars_lazy_frame_group_by(df, exprs_ptrs, length(exprs_ptrs))
     end
@@ -326,7 +355,7 @@ agg(gb::LazyGroupBy, exprs...) = agg(gb, collect(exprs)::Vector)
 function agg(gb::LazyGroupBy, exprs::Vector)
     exprs = map(ex -> ex isa String ? col(ex) : ex, exprs)
     exprs = convert(Vector{Expr}, exprs)
-    @GC.preserve exprs begin
+    GC.@preserve exprs begin
         exprs_ptrs = Ptr{polars_expr_t}[expr.ptr for expr in exprs]
         out = polars_lazy_group_by_agg(gb, exprs_ptrs, length(exprs_ptrs))
     end
@@ -398,7 +427,7 @@ function _sort!(df::LazyFrame, exprs::Vector, rev, stable, nulls_last)
 
     exprs = map(ex -> ex isa String ? col(ex) : ex, exprs)
     exprs = convert(Vector{Expr}, exprs)
-    @GC.preserve exprs begin
+    GC.@preserve exprs begin
         exprs_ptrs = Ptr{polars_expr_t}[expr.ptr for expr in exprs]
         API.polars_lazy_frame_sort(
             df, exprs_ptrs,
@@ -411,9 +440,9 @@ function _sort!(df::LazyFrame, exprs::Vector, rev, stable, nulls_last)
 end
 
 export Series, DataFrame,
-       select, with_columns, fetch,
-       read_parquet, write_parquet,
-       lazy, innerjoin, groupby, agg
+    select, with_columns, with_row_count,
+    fetch, read_parquet, write_parquet,
+    lazy, innerjoin, groupby, agg
 
 ## Tables.jl interface
 
@@ -425,7 +454,7 @@ function schema(df::DataFrame)
 
     # Refine types by fetching real null counts, this should be quite
     # cheap.
-    null_counts = select(df, map(null_count∘col∘string, names)...)
+    null_counts = select(df, map(null_count ∘ col ∘ string, names)...)
     types = map(zip(names, types)) do (name, T)
         if iszero(only(null_counts[name]))
             nomissing(T)

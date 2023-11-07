@@ -38,13 +38,18 @@ function load_value(value::Value{T}) where {T <: PhysicalDType}
     out[]
 end
 
-function load_value(value::Value{String})
-    polars_value_type(value) == PolarsValueTypeNull && return missing
+function load_value(value::Value{T}) where {T <: Union{MaybeMissing{String},Categorical{String},Categorical{MaybeMissing{String}}}}
+    value_type = polars_value_type(value)
+    value_type == PolarsValueTypeNull && return missing
 
     io = Ref(IOBuffer())
     callback = @cfunction(_write_callback, Cssize_t, (Any, Ptr{Cchar}, Cuint))
 
-    err = polars_value_utf8_get(value, io, callback)
+    err = if value_type == PolarsValueTypeCategorical
+        polars_value_categorical_get(value, io, callback)
+    else
+        polars_value_utf8_get(value, io, callback)
+    end
     polars_error(err)
 
     String(take!(io[]))

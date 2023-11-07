@@ -116,6 +116,11 @@ void polars_lazy_frame_with_columns(struct polars_lazy_frame_t *df,
                                     const struct polars_expr_t *const *exprs,
                                     uintptr_t nexprs);
 
+const struct polars_error_t *polars_lazy_frame_with_row_count(struct polars_lazy_frame_t *df,
+                                                              const uint8_t *name,
+                                                              uintptr_t len,
+                                                              uint32_t offset);
+
 void polars_lazy_frame_select(struct polars_lazy_frame_t *df,
                               const struct polars_expr_t *const *exprs,
                               uintptr_t nexprs);

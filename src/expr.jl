@@ -52,7 +52,7 @@ function Base.convert(::Type{Expr}, ::Missing)
 end
 function Base.convert(::Type{Expr}, s::String)
     out = Ref{Ptr{polars_expr_t}}()
-    err = polars_expr_literal_utf8(s, length(s), out)
+    err = polars_expr_literal_utf8(s, sizeof(s), out)
     polars_error(err)
     Expr(out[])
 end
@@ -86,7 +86,7 @@ column name `"*"` will select all columns in the dataframe.
 """
 function col(name)
     expr = Ref{Ptr{polars_expr_t}}()
-    err = polars_expr_col(name, length(name), expr)
+    err = polars_expr_col(name, sizeof(name), expr)
     polars_error(err)
     return Expr(expr[])
 end
@@ -99,7 +99,7 @@ Renames the result of this expression to a new name.
 """
 function alias(expr, alias)
     out = Ref{Ptr{polars_expr_t}}()
-    err = polars_expr_alias(expr, alias, length(alias), out)
+    err = polars_expr_alias(expr, alias, sizeof(alias), out)
     polars_error(err)
     return Expr(out[])
 end
@@ -113,7 +113,7 @@ Adds a prefix to the name of the resulting expression.
 """
 function prefix(expr, pref)
     out = Ref{Ptr{polars_expr_t}}()
-    err = polars_expr_prefix(expr, pref, length(pref), out)
+    err = polars_expr_prefix(expr, pref, sizeof(pref), out)
     polars_error(err)
     return Expr(out[])
 end
@@ -127,7 +127,7 @@ Adds a suffix to the name of the resulting expression.
 """
 function suffix(expr, suf)
     out = Ref{Ptr{polars_expr_t}}()
-    err = polars_expr_suffix(expr, suf, length(suf), out)
+    err = polars_expr_suffix(expr, suf, sizeof(suf), out)
     polars_error(err)
     return Expr(out[])
 end
@@ -141,6 +141,8 @@ expressions.
 function lit(v)
     convert(Expr, v) 
 end
+
+Base.count() = Expr(polars_expr_count())
 
 """
     cast(expr::Polars.Expr, dtype::Type)::Polars.Expr
@@ -258,7 +260,7 @@ end
 
     gen_impl_expr!(polars_expr_n_unique, Expr::n_unique)
     gen_impl_expr!(polars_expr_unique, Expr::unique)
-    gen_impl_expr!(polars_expr_count, Expr::count)
+    gen_impl_expr!(polars_expr_count_unary, Expr::count)
     gen_impl_expr!(polars_expr_first, Expr::first)
     gen_impl_expr!(polars_expr_last, Expr::last)
 
@@ -288,6 +290,9 @@ end
     gen_impl_expr_binary!(polars_expr_sub, Expr::sub)
     gen_impl_expr_binary!(polars_expr_mul, Expr::mul)
     gen_impl_expr_binary!(polars_expr_div, Expr::div)
+
+    gen_impl_expr_binary!(polars_expr_fill_null, Expr::fill_null)
+    gen_impl_expr_binary!(polars_expr_fill_nan, Expr::fill_nan)
 end
 
 module Lists
@@ -343,7 +348,7 @@ using ..Polars: Expr, API
 Returns a new series corresponding to values of the selected field.
 """
 function field_by_name(expr, name)
-    field = API.polars_expr_struct_field_by_name(expr, name, length(name))
+    field = API.polars_expr_struct_field_by_name(expr, name, sizeof(name))
     Expr(field)
 end
 field_by_name(name) = Base.Fix2(field_by_name, name)
@@ -368,7 +373,7 @@ Renames the fields of the struct series with the provided new names.
 """
 function rename_fields(expr, new_names)
     new_names = convert(Vector{String}, new_names)
-    new_struct = API.polars_expr_struct_rename_fields(expr, new_names, length.(new_names), length(new_names))
+    new_struct = API.polars_expr_struct_rename_fields(expr, new_names, sizeof.(new_names), length(new_names))
     @assert new_struct != C_NULL "failed to rename fields"
     Expr(new_struct)
 end

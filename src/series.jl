@@ -1,4 +1,12 @@
 """
+    Categorical{T}
+
+Represent that a series is of Polars type categorical which is roughly
+the equivalent of a `PooledVector{String,UInt32,Vector{UInt32}}`.
+"""
+struct Categorical{T} end
+
+"""
     Series(name::String, values::Vector{T})::Series{T}
 
 A series is a collection of values used as columns inside a [`DataFrame`](@ref).
@@ -57,7 +65,7 @@ function Base.getindex(series::Series{MT}, index) where {MT<:Union{MaybeMissing{
     out[]
 end
 
-function Base.getindex(series::Series{MT}, index) where {MT<:Union{MaybeMissing{Series},MaybeMissing{String},MaybeMissing{NamedTuple},MaybeMissing{Vector{UInt8}}}}
+function Base.getindex(series::Series{MT}, index) where {MT<:Union{MaybeMissing{Series},Categorical{String},MaybeMissing{String},MaybeMissing{NamedTuple},MaybeMissing{Vector{UInt8}}}}
     index = index - 1
 
     if series.null_count > 0 && polars_series_is_null(series, index)
@@ -79,5 +87,6 @@ Returns the name of this polars series.
 function name(series)
     ptr = Ref{Ptr{UInt8}}()
     len = polars_series_name(series, ptr)
+    @assert ptr[] != C_NULL
     unsafe_string(ptr[], len)
 end
