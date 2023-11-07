@@ -45,7 +45,7 @@ end
 
     df = DataFrame((; names = ["john", "alice", missing, "bob", "lilly"]))
 
-    lengths = select(df, col("names") |> Strings.lengths |> sum |> suffix("_lengths"))[:names_lengths] |> only
+    lengths = select(df, col("names") |> Strings.lengths_chars |> sum |> suffix("_lengths"))[:names_lengths] |> only
     @test lengths == length("john") + length("alice") + length("bob") + length("lilly")
 
     df = DataFrame((; names = ["eggs 🥚", "cheese 🧀", "tomatoes 🍅"],
